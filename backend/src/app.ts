@@ -4,6 +4,7 @@ import express, { type Express } from 'express';
 import helmet from 'helmet';
 
 import { env } from './config/env.js';
+import { jsonReplacer } from './lib/json.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { globalLimiter } from './middleware/rateLimit.js';
 import { requestContext } from './middleware/requestContext.js';
@@ -21,6 +22,10 @@ export function createApp(): Express {
   app.set('trust proxy', env.TRUST_PROXY_HOPS);
   app.disable('x-powered-by');
   app.disable('etag');
+
+  // Ids and money are BIGINT, which JSON.stringify refuses to serialise.
+  // Scoped to res.json rather than patching BigInt.prototype globally.
+  app.set('json replacer', jsonReplacer);
 
   // First, so every later log line and error response carries a request id.
   app.use(requestContext);
