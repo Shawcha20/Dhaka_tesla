@@ -959,7 +959,18 @@ anywhere in this repository.
 
 ## Tests
 
-_TODO._
+```bash
+cd backend
+npm test                  # everything
+npm run test:unit         # pure logic — no database needed
+npm run test:integration  # HTTP level, needs MySQL running
+npm run test:coverage
+```
+
+Unit tests run against no database at all, because the fare engine, the matching
+rule, the geometry and the money arithmetic are deliberately pure functions with
+config passed in. That means the hand-checkable numbers below are verified on every
+run, and a developer with a fresh clone can check them before installing anything.
 
 The suite targets what is actually risky, not a coverage number:
 
@@ -1147,7 +1158,7 @@ Each item is one feature branch merged into `master`.
 - [x] Backend scaffold: config, logging, error handling, health checks
 - [x] Database schema, constraints, indexes and seed data
 - [ ] Authentication and authorization
-- [ ] Geography and fare engine
+- [x] Geography and fare engine
 - [ ] Ride request lifecycle and state machine
 - [ ] Tesla pooling, seat capacity and concurrency safety
 - [ ] Driver flow and payment settlement
