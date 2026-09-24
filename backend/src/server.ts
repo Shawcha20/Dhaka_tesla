@@ -2,9 +2,18 @@ import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { createShutdownHandler } from './lib/gracefulShutdown.js';
 import { logger } from './lib/logger.js';
+import { pingDatabase } from './lib/prisma.js';
+import { registerReadinessCheck } from './lib/readiness.js';
 
 /** How long to let in-flight requests finish before exiting anyway. */
 const SHUTDOWN_GRACE_MS = 10_000;
+
+/**
+ * Registered here rather than inside the Prisma module so that importing the
+ * client does not, as a side effect, make every test's `/ready` call try to open
+ * a database connection.
+ */
+registerReadinessCheck({ name: 'database', probe: pingDatabase });
 
 const app = createApp();
 
