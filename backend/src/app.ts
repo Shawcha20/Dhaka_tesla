@@ -9,6 +9,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { globalLimiter } from './middleware/rateLimit.js';
 import { requestContext } from './middleware/requestContext.js';
 import { healthRouter } from './modules/health/health.routes.js';
+import { apiRouter } from './routes.js';
 
 /**
  * Built as a factory rather than a module-level singleton so tests can create an
@@ -58,6 +59,8 @@ export function createApp(): Express {
 
   // Health lives outside /api/v1: probes should not have to track API versions.
   app.use(healthRouter);
+
+  app.use('/api/v1', apiRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
