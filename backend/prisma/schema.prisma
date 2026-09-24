@@ -1,0 +1,407 @@
+// Dhaka Tesla Pool — database schema
+//
+// Conventions:
+//   * Table and column names are snake_case via @@map/@map; Prisma models stay
+//     PascalCase so generated TypeScript reads naturally.
+//   * All ids are BIGINT UNSIGNED. Serialised to JSON as numbers by a replacer
+//     in app.ts — see src/lib/json.ts for why that is safe.
+//   * All money is BIGINT UNSIGNED holding integer *paisa* (100 paisa = 1 BDT).
+//     Never a float: pool discounts divide, and floats lose exactness.
+//   * CHECK constraints cannot be expressed in Prisma's schema language. The
+//     important ones — above all `seats_taken <= capacity` — are written by hand
+//     into the migration SQL. Grep for "CHECK" in prisma/migrations.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  PASSENGER
+  DRIVER
+}
+
+/// Includes SYSTEM because some transitions have no human behind them: a pool
+/// cancelled by its driver pushes members back to REQUESTED, and that is the
+/// system acting, not the passenger.
+enum ActorRole {
+  PASSENGER
+  DRIVER
+  SYSTEM
+}
+
+/// One passenger's journey. Names follow the brief's suggested lifecycle; the UI
+/// renders STARTED as "In progress".
+enum RideStatus {
+  REQUESTED
+  MATCHED
+  DRIVER_ARRIVED
+  STARTED
+  COMPLETED
+  CANCELLED
+}
+
+/// One vehicle's trip. FORMING is the only status that accepts new members,
+/// which is what stops a stranger joining a Tesla that has already left.
+enum PoolStatus {
+  FORMING
+  DRIVER_ARRIVED
+  STARTED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  TESLAPAY
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+enum WalletDirection {
+  CREDIT
+  DEBIT
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Identity
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One identity table with a role, rather than separate passengers/drivers:
+/// one login form, one password policy, one id for every foreign key to target.
+model User {
+  id           BigInt  @id @default(autoincrement()) @db.UnsignedBigInt
+  name         String  @db.VarChar(100)
+  /// Stored lowercased so Nusrat@x.com cannot become a second account.
+  email        String  @unique @db.VarChar(255)
+  phone        String? @unique @db.VarChar(20)
+  /// argon2id, parameters embedded. 255 leaves room to raise cost factors later.
+  passwordHash String  @map("password_hash") @db.VarChar(255)
+  role         Role
+  isActive     Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  vehicle        Vehicle?
+  rideRequests   RideRequest[]       @relation("PassengerRides")
+  cancelledRides RideRequest[]       @relation("RidesCancelledBy")
+  pools          Pool[]
+  wallet         Wallet?
+  refreshTokens  RefreshToken[]
+  statusHistory  RideStatusHistory[]
+  payments       Payment[]
+
+  @@index([role])
+  @@map("users")
+}
+
+/// Access tokens are stateless and cannot be revoked. If a user logs out, or a
+/// token leaks, something must be able to say no — this table is that something.
+/// We store sha256(token), never the token: a database dump must not hand out
+/// live sessions.
+model RefreshToken {
+  id        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  userId    BigInt    @map("user_id") @db.UnsignedBigInt
+  tokenHash String    @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime  @map("expires_at")
+  /// Null while the token is live. Set on logout, on rotation, or on a
+  /// force-revoke of every session for a user.
+  revokedAt DateTime? @map("revoked_at")
+  userAgent String?   @map("user_agent") @db.VarChar(255)
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vehicles and geography
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The Teslas. capacity lives here because it is a property of Bullet, not of a
+/// trip. driverId is unique: one Tesla per driver in this MVP, enforced by the
+/// schema so relaxing it later is a deliberate migration rather than an accident.
+model Vehicle {
+  id       BigInt  @id @default(autoincrement()) @db.UnsignedBigInt
+  driverId BigInt  @unique @map("driver_id") @db.UnsignedBigInt
+  name     String  @db.VarChar(60)
+  plateNo  String  @unique @map("plate_no") @db.VarChar(30)
+  capacity Int     @db.UnsignedTinyInt
+  isOnline Boolean @default(false) @map("is_online")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  driver User   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  pools  Pool[]
+
+  @@index([isOnline])
+  @@map("vehicles")
+}
+
+/// Predefined Dhaka zones. A foreign key means "Banani" is spelled one way
+/// forever; free text gives you Banani, banani and Bannani within a week, and
+/// the matching rule silently stops working.
+///
+/// DECIMAL(9,6) rather than FLOAT: exact to ~11cm. Distance feeds fare, and fare
+/// must be reproducible — an evaluator recomputing 1.799 km by hand must get our
+/// answer.
+model Area {
+  id        Int     @id @default(autoincrement()) @db.UnsignedSmallInt
+  name      String  @unique @db.VarChar(60)
+  latitude  Decimal @db.Decimal(9, 6)
+  longitude Decimal @db.Decimal(9, 6)
+  isActive  Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  pickupRequests  RideRequest[] @relation("PickupArea")
+  dropoffRequests RideRequest[] @relation("DropoffArea")
+  pools           Pool[]
+
+  @@index([isActive])
+  @@map("areas")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rides and pools
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One row per passenger journey; the passenger-facing state machine.
+///
+/// There is deliberately no poolId column: membership lives in pool_members and
+/// nowhere else. A denormalised poolId would be a second place to update inside
+/// the seat-claim transaction, and therefore a second place to get wrong.
+model RideRequest {
+  id            BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  passengerId   BigInt     @map("passenger_id") @db.UnsignedBigInt
+  pickupAreaId  Int        @map("pickup_area_id") @db.UnsignedSmallInt
+  dropoffAreaId Int        @map("dropoff_area_id") @db.UnsignedSmallInt
+  seatsRequested Int       @map("seats_requested") @db.UnsignedTinyInt
+  status        RideStatus @default(REQUESTED)
+
+  /// Snapshot, not derived on read. If someone later corrects Mohakhali's
+  /// coordinates, a completed ride must still explain the fare actually charged.
+  distanceKm Decimal @map("distance_km") @db.Decimal(6, 3)
+
+  /// The solo quote at request time, before anyone knows a pool will form.
+  estimatedFarePaisa BigInt  @map("estimated_fare_paisa") @db.UnsignedBigInt
+  /// Null until STARTED, then written once and never touched. The gap between
+  /// this and the estimate is the pool discount, made visible.
+  finalFarePaisa     BigInt? @map("final_fare_paisa") @db.UnsignedBigInt
+
+  paymentMethod PaymentMethod @default(CASH) @map("payment_method")
+
+  cancelledBy  BigInt? @map("cancelled_by") @db.UnsignedBigInt
+  cancelReason String? @map("cancel_reason") @db.VarChar(255)
+
+  requestedAt DateTime  @default(now()) @map("requested_at")
+  matchedAt   DateTime? @map("matched_at")
+  arrivedAt   DateTime? @map("arrived_at")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  cancelledAt DateTime? @map("cancelled_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  passenger       User                @relation("PassengerRides", fields: [passengerId], references: [id], onDelete: Restrict)
+  cancelledByUser User?               @relation("RidesCancelledBy", fields: [cancelledBy], references: [id], onDelete: SetNull)
+  pickupArea      Area                @relation("PickupArea", fields: [pickupAreaId], references: [id], onDelete: Restrict)
+  dropoffArea     Area                @relation("DropoffArea", fields: [dropoffAreaId], references: [id], onDelete: Restrict)
+  poolMember      PoolMember?
+  statusHistory   RideStatusHistory[]
+  payment         Payment?
+  walletEntries   WalletTransaction[]
+
+  /// The driver feed: open requests in an area. status leads because it is the
+  /// more selective filter once history accumulates.
+  @@index([status, pickupAreaId])
+  /// Passenger history, newest first, with no sort step.
+  @@index([passengerId, requestedAt(sort: Desc)])
+  /// Oldest-waiting-first ordering in the driver feed.
+  @@index([status, requestedAt])
+  @@map("ride_requests")
+}
+
+/// One row per vehicle trip; the driver-facing state machine, and the row the
+/// concurrency control locks.
+model Pool {
+  id           BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  vehicleId    BigInt     @map("vehicle_id") @db.UnsignedBigInt
+  /// Denormalised from vehicles: the driver feed queries (driver_id, status) on
+  /// every poll, and a vehicle does not change owner mid-trip. Foreign key kept
+  /// so it cannot drift.
+  driverId     BigInt     @map("driver_id") @db.UnsignedBigInt
+  /// The matching anchor — every member shares this pickup zone.
+  pickupAreaId Int        @map("pickup_area_id") @db.UnsignedSmallInt
+  status       PoolStatus @default(FORMING)
+
+  /// Snapshot of vehicle.capacity. If Jashim rebuilds Bullet with four seats, a
+  /// pool that ran last week was still a three-seat pool. It also makes the
+  /// invariant checkable within one row, with no join — which is what allows the
+  /// atomic conditional UPDATE that prevents overbooking.
+  capacity   Int @db.UnsignedTinyInt
+  seatsTaken Int @default(0) @map("seats_taken") @db.UnsignedTinyInt
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  arrivedAt   DateTime? @map("arrived_at")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  cancelledAt DateTime? @map("cancelled_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  vehicle       Vehicle             @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  driver        User                @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  pickupArea    Area                @relation(fields: [pickupAreaId], references: [id], onDelete: Restrict)
+  members       PoolMember[]
+  statusHistory RideStatusHistory[]
+
+  @@index([driverId, status])
+  @@index([status, pickupAreaId])
+  @@map("pools")
+}
+
+/// The junction table, and the answer to "obvious pool membership".
+///
+/// farePaisa lives here because fare is a property of *this passenger in this
+/// pool* — the same request would cost more riding solo.
+///
+/// A cancelled member keeps its row with leftAt set rather than being deleted:
+/// removing it would erase the fact that Nusrat was ever in the pool. It also
+/// gives a reconciliation invariant worth testing —
+/// pools.seats_taken == SUM(seats) WHERE left_at IS NULL.
+model PoolMember {
+  id            BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  poolId        BigInt @map("pool_id") @db.UnsignedBigInt
+  rideRequestId BigInt @unique @map("ride_request_id") @db.UnsignedBigInt
+  seats         Int    @db.UnsignedTinyInt
+  farePaisa     BigInt @map("fare_paisa") @db.UnsignedBigInt
+
+  joinedAt DateTime  @default(now()) @map("joined_at")
+  leftAt   DateTime? @map("left_at")
+
+  pool        Pool        @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  rideRequest RideRequest @relation(fields: [rideRequestId], references: [id], onDelete: Cascade)
+
+  /// The active-member list the driver sees.
+  ///
+  /// Note there is deliberately no additional UNIQUE(pool_id, ride_request_id):
+  /// the global @unique on rideRequestId above is strictly stronger and already
+  /// makes a retried join fail. A composite unique would be a redundant index
+  /// paying write cost on every insert for a guarantee we already have.
+  @@index([poolId, leftAt])
+  @@map("pool_members")
+}
+
+/// Append-only audit trail. Nothing here is ever updated or deleted.
+///
+/// This is what lets the system answer "why was Nusrat charged 41.59 when she
+/// was quoted 46.99".
+model RideStatusHistory {
+  id            BigInt  @id @default(autoincrement()) @db.UnsignedBigInt
+  rideRequestId BigInt? @map("ride_request_id") @db.UnsignedBigInt
+  poolId        BigInt? @map("pool_id") @db.UnsignedBigInt
+
+  /// VARCHAR, not the enum, on purpose: an audit log must outlive the schema. If
+  /// a later migration renames or drops a status, an enum-typed column would
+  /// either block the migration or silently rewrite history.
+  fromStatus String? @map("from_status") @db.VarChar(30)
+  toStatus   String  @map("to_status") @db.VarChar(30)
+
+  actorUserId BigInt?   @map("actor_user_id") @db.UnsignedBigInt
+  actorRole   ActorRole @map("actor_role")
+  note        String?   @db.VarChar(255)
+
+  /// Millisecond precision: two transitions in the same second must still be
+  /// orderable, which matters precisely in the contested-seat scenario.
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  rideRequest RideRequest? @relation(fields: [rideRequestId], references: [id], onDelete: Cascade)
+  pool        Pool?        @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  actor       User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([rideRequestId, createdAt])
+  @@index([poolId, createdAt])
+  @@map("ride_status_history")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Money
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Settlement record, one per ride. amountPaisa is copied from
+/// finalFarePaisa at settlement rather than referenced, so a receipt is
+/// self-contained.
+model Payment {
+  id            BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  rideRequestId BigInt        @unique @map("ride_request_id") @db.UnsignedBigInt
+  payerId       BigInt        @map("payer_id") @db.UnsignedBigInt
+  amountPaisa   BigInt        @map("amount_paisa") @db.UnsignedBigInt
+  method        PaymentMethod
+  status        PaymentStatus @default(PENDING)
+  paidAt        DateTime?     @map("paid_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  rideRequest RideRequest @relation(fields: [rideRequestId], references: [id], onDelete: Cascade)
+  payer       User        @relation(fields: [payerId], references: [id], onDelete: Restrict)
+
+  @@index([payerId, createdAt])
+  @@index([status])
+  @@map("payments")
+}
+
+/// Simulated TeslaPay. CHECK (balance_paisa >= 0) in the migration makes an
+/// overdraft structurally impossible, so "insufficient funds" is enforced by the
+/// database and not only by a service someone might refactor around.
+model Wallet {
+  id           BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  userId       BigInt @unique @map("user_id") @db.UnsignedBigInt
+  balancePaisa BigInt @default(0) @map("balance_paisa") @db.UnsignedBigInt
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+
+  @@map("wallets")
+}
+
+/// The ledger that explains a wallet balance. A bare balance column is
+/// unauditable: when Nusrat asks why she has 120 BDT left, the only honest
+/// answer comes from a ledger. balanceAfterPaisa on each row means any
+/// disagreement between ledger and balance is detectable rather than a mystery.
+model WalletTransaction {
+  id                BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  walletId          BigInt          @map("wallet_id") @db.UnsignedBigInt
+  direction         WalletDirection
+  amountPaisa       BigInt          @map("amount_paisa") @db.UnsignedBigInt
+  balanceAfterPaisa BigInt          @map("balance_after_paisa") @db.UnsignedBigInt
+  rideRequestId     BigInt?         @map("ride_request_id") @db.UnsignedBigInt
+  note              String?         @db.VarChar(255)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  wallet      Wallet       @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  rideRequest RideRequest? @relation(fields: [rideRequestId], references: [id], onDelete: SetNull)
+
+  @@index([walletId, createdAt])
+  @@map("wallet_transactions")
+}
