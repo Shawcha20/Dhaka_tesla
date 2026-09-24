@@ -423,7 +423,7 @@ wrong:
 | --- | --- | --- |
 | Application | Atomic conditional `UPDATE`; zero affected rows means `409` | The read-then-write race |
 | Schema | `CHECK (seats_taken <= capacity)` on `pools` | A bug in any future code path, or a manual `UPDATE` |
-| Schema | `UNIQUE (pool_id, ride_request_id)` | A retry or double-click booking a second seat |
+| Schema | `UNIQUE (ride_request_id)` on `pool_members` | A retry or double-click booking a second seat |
 
 **Isolation level** is the default `REPEATABLE READ`. We do not rely on the snapshot
 for the seat check, because the conditional `UPDATE` reads current committed state
@@ -698,9 +698,13 @@ reconciliation check worth testing: `seats_taken` must always equal
 
 | Constraint / index | Reason |
 | --- | --- |
-| `UNIQUE (pool_id, ride_request_id)` | Idempotency. A retried join cannot book a second seat. |
-| `UNIQUE (ride_request_id)` | A request belongs to at most one pool, ever. Stops Rafiq being seated in two Teslas. |
+| `UNIQUE (ride_request_id)` | A request belongs to at most one pool, ever. Stops Rafiq being seated in two Teslas, and makes a retried join fail rather than book a second seat. |
 | `INDEX (pool_id, left_at)` | The active-member list the driver sees. |
+
+There is deliberately **no** additional `UNIQUE (pool_id, ride_request_id)`. The
+global unique on `ride_request_id` is strictly stronger and already covers the
+idempotency case, so a composite unique would be a redundant index paying write
+cost on every insert for a guarantee we already have.
 
 ### `ride_status_history`
 
@@ -739,16 +743,18 @@ BDT left, the only honest answer comes from a ledger. `balance_after_paisa` on e
 means any disagreement between ledger and balance is immediately detectable rather
 than a mystery.
 
-`CHECK (balance_paisa >= 0)` makes an overdraft structurally impossible, so the
-"insufficient funds" path is enforced by the database and not only by a service
-someone might refactor around.
+Overdrafts are structurally impossible because `balance_paisa` is
+`BIGINT UNSIGNED`: MySQL in strict mode rejects the subtraction outright rather
+than wrapping, so "insufficient funds" is enforced by the column type and not only
+by a service someone might refactor around. No redundant `CHECK (>= 0)` is added
+for the same reason — the type already says it.
 
 ### Conventions
 
 - Surrogate `BIGINT UNSIGNED AUTO_INCREMENT` primary keys throughout. Natural keys
   (email, plate) get unique indexes instead, so they can be corrected without
   cascading.
-- `utf8mb4` / `utf8mb4_0900_ai_ci` — Bengali names and place names must round-trip.
+- `utf8mb4` / `utf8mb4_unicode_ci` — Bengali names and place names must round-trip.
 - Timestamps are `DATETIME` in UTC, formatted to Asia/Dhaka in the UI. Storing local
   time is how you lose an hour twice a year.
 - Foreign keys are `RESTRICT` on reference data (areas, users) and `CASCADE` only where
@@ -910,15 +916,46 @@ be re-tested by hand without touching code.
 
 ## Migrations and seed data
 
-_TODO._
+`docker compose up` runs both automatically. To drive them by hand:
+
+```bash
+cd backend
+npm run prisma:generate     # regenerate the typed client from the schema
+npm run prisma:deploy       # apply migrations (use this in containers and CI)
+npm run db:seed             # idempotent: safe to re-run
+```
+
+Changing the schema during development instead uses `npm run prisma:migrate`,
+which creates a new migration and applies it. `npm run db:reset` drops, re-migrates
+and re-seeds.
+
+**The `CHECK` constraints are hand-written.** Prisma's schema language has no
+syntax for them, so the generated migration SQL is followed by a hand-authored
+block adding nine constraints — most importantly
+`CHECK (seats_taken <= capacity)`. They are clearly marked in
+[`prisma/migrations/20260924000000_init/migration.sql`](backend/prisma/migrations/20260924000000_init/migration.sql);
+everything above the marker was produced by `prisma migrate diff`, so it matches
+the schema exactly. This needs **MySQL 8.0.16+**: earlier versions parse `CHECK`
+and silently ignore it, which would leave the overbooking guarantee resting on
+application code alone.
 
 Seed data uses the story cast, not placeholders: **Jashim** driving **Bullet**
-(3 seats), with **Nusrat**, **Rafiq** and **Shirin** as passengers, and twelve Dhaka
-areas with real coordinates.
+(3 seats), with **Nusrat**, **Rafiq** and **Shirin** as passengers, plus twelve
+Dhaka areas with real coordinates.
 
 ## Demo credentials
 
-_TODO._
+Password is the same for every account: **`TeslaPool#2026`**
+
+| Role | Email | Notes |
+| --- | --- | --- |
+| Driver | `jashim@dhakatesla.test` | Owns Bullet — `DHA-TESLA-01`, 3 seats |
+| Passenger | `nusrat@dhakatesla.test` | 500.00 BDT TeslaPay balance |
+| Passenger | `rafiq@dhakatesla.test` | 500.00 BDT — pools with Nusrat from Banani |
+| Passenger | `shirin@dhakatesla.test` | **45.00 BDT only** — enough for a pooled fare but not a solo one, so the `INSUFFICIENT_WALLET_BALANCE` path is demonstrable without editing data |
+
+These are seeded demo accounts in a throwaway database. No real credentials appear
+anywhere in this repository.
 
 ## Tests
 
@@ -1107,8 +1144,8 @@ Each item is one feature branch merged into `master`.
 
 - [x] Repository scaffolding, line-ending and secret hygiene
 - [x] Architecture, ERD, API contract and decision records
-- [ ] Backend scaffold: config, logging, error handling, health checks
-- [ ] Database schema, constraints, indexes and seed data
+- [x] Backend scaffold: config, logging, error handling, health checks
+- [x] Database schema, constraints, indexes and seed data
 - [ ] Authentication and authorization
 - [ ] Geography and fare engine
 - [ ] Ride request lifecycle and state machine
