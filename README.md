@@ -598,9 +598,22 @@ ride on his day off.
 Access tokens are stateless, so they cannot be revoked. If Nusrat logs out, or a
 token leaks, something must be able to say no — that something is a row here.
 
-We store `sha256(token)`, never the token: a database dump must not hand out live
-sessions. Rotation on every refresh means a stolen token is usable once at most, and
-reuse of an already-rotated token is a detectable signal.
+Refresh tokens are **opaque 256-bit random values, not JWTs.** There is no point
+signing something whose validity is decided by a database lookup anyway, and opaque
+means unforgeable by construction: there is no algebra to attack, only a lookup that
+either finds a live row or does not.
+
+What is stored is an **HMAC-SHA256** of the token, keyed by `JWT_REFRESH_SECRET` —
+not a bare hash. Both are irreversible for a 256-bit random input, but keying the
+digest means a stolen database is not by itself enough to validate a captured token:
+the attacker also needs the secret, which lives in the environment rather than in the
+data. That is also why the two secrets must differ — the access signing key and this
+one then have independent blast radius.
+
+Rotation on every refresh means a stolen token is usable once at most. Replaying an
+already-rotated token means either the real client or an attacker is reusing it and
+we cannot tell which, so the safe response is to revoke **every** session for that
+user and make them sign in again.
 
 | Constraint / index | Reason |
 | --- | --- |
@@ -772,7 +785,7 @@ Mandated by the brief: Next.js/React frontend, Node.js backend. Chosen here: MyS
 | API style | **REST** | GraphQL, tRPC | Operations are verbs against small resources, and `409 Conflict` is exactly right when Shirin loses the race. Two known clients means GraphQL's flexibility buys nothing. |
 | ORM | **Prisma** | Drizzle, Knex, raw `mysql2` | Most dependable migrations, and schema-derived types make a column rename a compile error. |
 | Validation | **Zod** | Joi, class-validator, express-validator | One schema yields both the runtime check and the TS type via `z.infer`, so they cannot drift. |
-| Auth | **argon2id** + JWT access (15m) + rotating refresh (7d) in `httpOnly` cookies | Server sessions, access-token-only, Clerk/Auth0 | Stateless verification for the polled endpoints, stateful revocation where logout must mean something. |
+| Auth | **argon2id** + JWT access (15m) + rotating **opaque** refresh (7d), both in `httpOnly` cookies | Server sessions, access-token-only, Clerk/Auth0 | Stateless verification for the polled endpoints, stateful revocation where logout must mean something. |
 | Tests | **Vitest** + Supertest | Jest, node:test, Testcontainers | Native TS/ESM with no transform config. Real MySQL, because the risky behaviours *are* database behaviours. |
 | Logging | **Pino** + request IDs | Winston, console | Structured JSON, low overhead, and every error response carries a `requestId` that matches a log line. |
 | Frontend | **Next.js 15** App Router + Tailwind + TanStack Query | CRA/Vite, CSS Modules, MUI, SWR | Query handles polling, caching and loading/error states, which is most of this UI's behaviour. |
@@ -905,9 +918,14 @@ cp .env.example .env
 ```
 
 Every variable is documented inline in [`.env.example`](.env.example). No real secrets
-are committed to this repository. Generate each secret with `openssl rand -hex 32`;
-the access and refresh secrets must be **different**, so that a leaked access secret
-cannot mint refresh tokens.
+are committed to this repository. Generate each secret with `openssl rand -hex 32`.
+
+`JWT_ACCESS_SECRET` signs the access JWT; `JWT_REFRESH_SECRET` keys the HMAC that
+refresh tokens are stored under. They must be **different**, and the API refuses to
+start if they match — reusing one value collapses the blast radius of a leak of
+either. In production it also refuses to start on a placeholder secret or a wildcard
+CORS origin, because a misconfiguration that boots successfully just fails later, in
+front of a user.
 
 Fare constants (`FARE_BASE_PAISA`, `FARE_PER_KM_PAISA`,
 `FARE_POOL_DISCOUNT_PCT`) and the matching threshold
@@ -1157,7 +1175,7 @@ Each item is one feature branch merged into `master`.
 - [x] Architecture, ERD, API contract and decision records
 - [x] Backend scaffold: config, logging, error handling, health checks
 - [x] Database schema, constraints, indexes and seed data
-- [ ] Authentication and authorization
+- [x] Authentication and authorization
 - [x] Geography and fare engine
 - [ ] Ride request lifecycle and state machine
 - [ ] Tesla pooling, seat capacity and concurrency safety
