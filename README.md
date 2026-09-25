@@ -416,6 +416,20 @@ perfectly good answer, but it needs two round trips and forces us to reason abou
 ordering as soon as a transaction touches more than one row. One conditional statement
 needs neither.
 
+**That statement also does a second job.** InnoDB holds the exclusive row lock it took
+for the write until the transaction commits, so any other join targeting the same pool
+blocks on it. Everything *after* the claim in the same transaction is therefore
+effectively serialised per pool — which is what lets the matching rule read a stable
+member list immediately afterwards.
+
+That ordering matters, and it is why the seat is claimed *before* the route is
+confirmed. The matching rule compares a candidate against every existing member, so
+two passengers each compatible with the pool as it stood may not be compatible with
+each other. Validating before the lock would leave that race open; validating after it
+closes it, and throwing then rolls the seat claim back along with everything else. The
+pre-flight check that runs first exists only to give the driver a specific reason —
+"wrong direction", "different area" — rather than a bare capacity failure.
+
 **Defence in depth.** Three independent layers, so the invariant holds even if one is
 wrong:
 
@@ -1177,8 +1191,8 @@ Each item is one feature branch merged into `master`.
 - [x] Database schema, constraints, indexes and seed data
 - [x] Authentication and authorization
 - [x] Geography and fare engine
-- [ ] Ride request lifecycle and state machine
-- [ ] Tesla pooling, seat capacity and concurrency safety
+- [x] Ride request lifecycle and state machine
+- [x] Tesla pooling, seat capacity and concurrency safety
 - [ ] Driver flow and payment settlement
 - [ ] Docker Compose setup
 - [ ] Frontend scaffold and auth screens
