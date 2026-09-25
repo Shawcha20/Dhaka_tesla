@@ -2,6 +2,8 @@ import { Router } from 'express';
 
 import { areasRouter } from './modules/areas/areas.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
+import { driverRouter } from './modules/driver/driver.routes.js';
+import { ridesRouter } from './modules/rides/rides.routes.js';
 
 /**
  * Everything under /api/v1.
@@ -15,3 +17,5 @@ export const apiRouter = Router();
 
 apiRouter.use('/auth', authRouter);
 apiRouter.use('/areas', areasRouter);
+apiRouter.use('/rides', ridesRouter);
+apiRouter.use('/driver', driverRouter);
