@@ -65,31 +65,31 @@ Everything in this design serves those three constraints.
 
 ### Passenger
 
-- [ ] Sign up and sign in
-- [ ] Request a ride: pickup area, destination, seat count
-- [ ] See an estimated fare before committing — solo price and shared price
-- [ ] Track status: requested → matched → driver arrived → in progress → completed
-- [ ] See who they are sharing with (first name and destination only, never fares)
-- [ ] View ride history
-- [ ] Cancel while the cancellation rules still allow it
+- [x] Sign up and sign in
+- [x] Request a ride: pickup area, destination, seat count
+- [x] See an estimated fare before committing — solo price and shared price
+- [x] Track status: requested → matched → driver arrived → in progress → completed
+- [x] See who they are sharing with (first name and destination only, never fares)
+- [x] View ride history
+- [x] Cancel while the cancellation rules still allow it
 
 ### Driver
 
-- [ ] Sign in; go online and offline
-- [ ] Own one Tesla with a fixed seat capacity
-- [ ] See open requests, with each one flagged as poolable or not — and why not
-- [ ] Accept a request, then add compatible passengers to the same trip
-- [ ] Mark arrival, start the trip, complete it
-- [ ] See every passenger, their seats, their fares, and seats used against capacity
-- [ ] View trip history
+- [x] Sign in; go online and offline
+- [x] Own one Tesla with a fixed seat capacity
+- [x] See open requests, with each one flagged as poolable or not — and why not
+- [x] Accept a request, then add compatible passengers to the same trip
+- [x] Mark arrival, start the trip, complete it
+- [x] See every passenger, their seats, their fares, and seats used against capacity
+- [x] View trip history
 
 ### Pool
 
-- [ ] Several requests share one Tesla
-- [ ] Occupied seats can never exceed capacity — enforced in three independent places
-- [ ] Each passenger gets an individually calculated fare
-- [ ] Fares recalculate when the pool changes, and lock when the trip starts
-- [ ] Full audit trail of every status change, who caused it and when
+- [x] Several requests share one Tesla
+- [x] Occupied seats can never exceed capacity — enforced in three independent places
+- [x] Each passenger gets an individually calculated fare
+- [x] Fares recalculate when the pool changes, and lock when the trip starts
+- [x] Full audit trail of every status change, who caused it and when
 
 ## Architecture
 
@@ -365,6 +365,37 @@ join, and cannot have their price change once they are in the vehicle.
 better for a system aggregating millions of transactions without bias; half up is
 easier for an evaluator to reproduce mentally, and at this scale the bias is
 irrelevant.
+
+### Payments
+
+No gateway, as the brief allows. `CASH` is a record that the driver collected it;
+`TESLAPAY` debits a simulated wallet and writes a ledger row.
+
+Payments are raised when the trip **starts**, not when the ride is requested — the
+amount is not knowable until the fare locks, and a payment row carrying a figure that
+could still change would be a receipt for a price nobody agreed to. They settle on
+completion.
+
+The debit is the same shape as the seat claim, for the same reason:
+
+```sql
+UPDATE wallets SET balance_paisa = balance_paisa - :amount
+ WHERE user_id = :payer AND balance_paisa >= :amount;
+```
+
+Reading the balance and then writing it would let two concurrent debits both pass an
+affordability check and overdraw. `balance_paisa` is also `BIGINT UNSIGNED`, so MySQL
+would reject the subtraction even without the guard.
+
+**A wallet shortfall does not block completion.** That one payment is marked `FAILED`
+with reason `INSUFFICIENT_WALLET_BALANCE`, and the trip still completes. Refusing to
+complete would strand the driver over someone else's balance with passengers already
+delivered — a failed TeslaPay payment is a debt to collect in cash, not a reason to
+hold a trip open. The response's `meta.settlement` itemises every line so the driver
+knows who still owes.
+
+This is why Shirin's seeded balance is 45.00 BDT: her solo fare (46.99) fails and her
+pooled fare (41.47) succeeds, so both paths are demonstrable without editing data.
 
 ### How money is stored
 
@@ -1052,7 +1083,7 @@ the `x-request-id` header and the server log line, so any reported error is trac
 | | `GET /driver/pools/current` | Active trip: members, seats, fares |
 | | `PATCH /driver/pools/:id/arrive` | `FORMING → DRIVER_ARRIVED` |
 | | `PATCH /driver/pools/:id/start` | `→ STARTED`, fares lock |
-| | `PATCH /driver/pools/:id/complete` | `→ COMPLETED`, payments settle |
+| | `PATCH /driver/pools/:id/complete` | `→ COMPLETED`, payments settle; `meta.settlement` itemises each one |
 | | `PATCH /driver/pools/:id/cancel` | Requeue members to `REQUESTED` |
 | | `GET /driver/pools` | Trip history |
 | **Ops** | `GET /health` · `GET /ready` | Liveness · readiness (`SELECT 1`) |
@@ -1082,7 +1113,7 @@ so the API does not confirm that someone else's ride id exists.
 | `POOL_EMPTY` | 409 | Cannot start a trip with no passengers |
 | `RIDE_NOT_CANCELLABLE` | 409 | Already started or already terminal |
 | `INVALID_STATE_TRANSITION` | 409 | Not permitted by the state machine |
-| `INSUFFICIENT_WALLET_BALANCE` | 409 | TeslaPay debit would go negative |
+| `INSUFFICIENT_WALLET_BALANCE` | — | Not an HTTP error. Returned as a per-payment `failureReason` in `meta.settlement`; see [Payments](#payments) |
 | `SAME_PICKUP_AND_DROPOFF` | 422 | Pickup and dropoff are the same area |
 | `ROUTE_NOT_COMPATIBLE` | 422 | Bearing difference exceeds the threshold |
 | `RATE_LIMITED` | 429 | Too many requests |
@@ -1193,7 +1224,7 @@ Each item is one feature branch merged into `master`.
 - [x] Geography and fare engine
 - [x] Ride request lifecycle and state machine
 - [x] Tesla pooling, seat capacity and concurrency safety
-- [ ] Driver flow and payment settlement
+- [x] Driver flow and payment settlement
 - [ ] Docker Compose setup
 - [ ] Frontend scaffold and auth screens
 - [ ] Passenger UI
