@@ -1,6 +1,7 @@
 import { Router } from 'express';
 
 import { areasRouter } from './modules/areas/areas.routes.js';
+import { authRouter } from './modules/auth/auth.routes.js';
 
 /**
  * Everything under /api/v1.
@@ -12,4 +13,5 @@ import { areasRouter } from './modules/areas/areas.routes.js';
  */
 export const apiRouter = Router();
 
+apiRouter.use('/auth', authRouter);
 apiRouter.use('/areas', areasRouter);

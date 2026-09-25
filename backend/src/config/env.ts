@@ -43,11 +43,30 @@ const EnvSchema = z
       .optional(),
 
     /* 32 chars minimum. `openssl rand -hex 32` produces 64, which is what
-       .env.example tells you to use. */
+       .env.example tells you to use.
+
+       ACCESS signs the JWT. REFRESH keys the HMAC that refresh tokens are stored
+       under, so a stolen database is not by itself enough to validate a captured
+       token. Two separate secrets means two independent blast radii. */
     JWT_ACCESS_SECRET: z.string().min(32, 'must be at least 32 characters'),
     JWT_REFRESH_SECRET: z.string().min(32, 'must be at least 32 characters'),
     ACCESS_TOKEN_TTL: z.string().min(1).default('15m'),
     REFRESH_TOKEN_TTL: z.string().min(1).default('7d'),
+
+    /**
+     * Cookie policy.
+     *
+     * Deployed, the frontend (Vercel) and the API (Render) are different sites,
+     * so the browser will only attach cookies to cross-site requests when
+     * SameSite=None — which in turn requires Secure. Locally both are localhost,
+     * where Lax works and None would be rejected over plain http.
+     *
+     * Routing the frontend's /api through a Next.js rewrite would make the pair
+     * same-origin and allow Lax in production too; that is the stronger CSRF
+     * position and is noted in the README as the next improvement.
+     */
+    COOKIE_SAMESITE: z.enum(['lax', 'strict', 'none']).optional(),
+    COOKIE_DOMAIN: z.string().min(1).optional(),
 
     /** Comma-separated. Credentials are sent, so wildcards are never allowed. */
     CORS_ORIGIN: z.string().default('http://localhost:3000'),
@@ -69,7 +88,18 @@ const EnvSchema = z
         code: z.ZodIssueCode.custom,
         path: ['JWT_REFRESH_SECRET'],
         message:
-          'must differ from JWT_ACCESS_SECRET — otherwise a leaked access secret can mint refresh tokens',
+          'must differ from JWT_ACCESS_SECRET — reusing one value collapses the blast radius of a leak of either',
+      });
+    }
+
+    // SameSite=None without Secure is rejected outright by every current browser,
+    // which would silently break sign-in rather than fail loudly here.
+    if (env.COOKIE_SAMESITE === 'none' && env.NODE_ENV !== 'production') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['COOKIE_SAMESITE'],
+        message:
+          'SameSite=None requires Secure cookies, which requires HTTPS — unusable outside production',
       });
     }
 
@@ -123,6 +153,15 @@ function load() {
     corsOrigins: env.CORS_ORIGIN.split(',')
       .map((o) => o.trim())
       .filter(Boolean),
+
+    cookies: {
+      // Secure is non-negotiable in production and impossible on plain http.
+      secure: env.NODE_ENV === 'production',
+      // Cross-site by default in production, Lax everywhere else.
+      sameSite:
+        env.COOKIE_SAMESITE ?? (env.NODE_ENV === 'production' ? 'none' : 'lax'),
+      ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
+    },
 
     /** Passed explicitly into the fare engine, which stays a pure function. */
     fare: {
