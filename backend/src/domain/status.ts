@@ -66,3 +66,16 @@ export function isCancellableRideStatus(status: RideStatus): boolean {
 export function poolAcceptsMembers(status: PoolStatus): boolean {
   return status === 'FORMING';
 }
+
+/**
+ * Audit events that are not status transitions.
+ *
+ * A pool's timeline needs to explain more than its own status changes: "why did
+ * seats_taken drop from 2 to 1" is answered by a membership event, not by a
+ * transition. Both are recorded in `ride_status_history`, which is exactly why
+ * `from_status` and `to_status` are VARCHAR rather than the enum — the column has
+ * to hold event names the status enum does not contain, and has to keep holding
+ * them after the enum changes.
+ */
+export const POOL_EVENTS = ['MEMBER_JOINED', 'MEMBER_LEFT'] as const;
+export type PoolEvent = (typeof POOL_EVENTS)[number];
