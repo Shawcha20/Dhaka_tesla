@@ -9,7 +9,14 @@ discounted fare, without the vehicle ever being overbooked.
 > **Status: in development.** Sections marked _TODO_ are not implemented yet. The
 > [roadmap](#roadmap) shows exactly where things stand.
 
-**Live demo:** _TODO_ · **Demo video:** _TODO_
+**Live app:** _TODO_ · **Live API:**
+<https://dhaka-tesla-pool-api-rzh8.onrender.com/api/v1> ·
+**Demo video:** _TODO_
+
+> The API runs on Render's free tier, which spins a container down after inactivity, so
+> the first request may take up to a minute. Check it is awake with
+> [`/ready`](https://dhaka-tesla-pool-api-rzh8.onrender.com/ready) — that endpoint
+> queries the database rather than merely reporting that the process is up.
 
 ---
 
