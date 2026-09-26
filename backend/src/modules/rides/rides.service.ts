@@ -153,9 +153,14 @@ export async function listRidesForPassenger(
     include: {
       pickupArea: { select: { id: true, name: true } },
       dropoffArea: { select: { id: true, name: true } },
-      poolMember: {
+      // Most recent membership, active or historical, so a cancelled ride can
+      // still show the pool it was in.
+      poolMembers: {
+        orderBy: { id: 'desc' },
+        take: 1,
         select: {
           farePaisa: true,
+          leftAt: true,
           pool: { select: { id: true, status: true, seatsTaken: true } },
         },
       },
@@ -177,7 +182,7 @@ export async function listRidesForPassenger(
       estimatedFarePaisa: ride.estimatedFarePaisa,
       finalFarePaisa: ride.finalFarePaisa,
       paymentMethod: ride.paymentMethod,
-      pooled: (ride.poolMember?.pool.seatsTaken ?? 0) > ride.seatsRequested,
+      pooled: (ride.poolMembers[0]?.pool.seatsTaken ?? 0) > ride.seatsRequested,
       requestedAt: ride.requestedAt,
       completedAt: ride.completedAt,
       cancelledAt: ride.cancelledAt,
@@ -214,7 +219,9 @@ export async function getRideForPassenger(rideId: bigint, passengerId: bigint) {
           actor: { select: { name: true } },
         },
       },
-      poolMember: {
+      poolMembers: {
+        orderBy: { id: 'desc' },
+        take: 1,
         select: {
           seats: true,
           farePaisa: true,
@@ -250,7 +257,7 @@ export async function getRideForPassenger(rideId: bigint, passengerId: bigint) {
     throw new AppError('RIDE_NOT_FOUND');
   }
 
-  const member = ride.poolMember;
+  const member = ride.poolMembers[0];
   const pool = member?.pool;
 
   return {
@@ -318,7 +325,12 @@ export async function cancelRide(
       select: {
         id: true,
         status: true,
-        poolMember: { select: { id: true, seats: true, poolId: true, leftAt: true } },
+        // Only an active membership needs its seat released.
+        poolMembers: {
+          where: { leftAt: null },
+          take: 1,
+          select: { id: true, seats: true, poolId: true, leftAt: true },
+        },
       },
     });
 
@@ -356,7 +368,7 @@ export async function cancelRide(
       },
     });
 
-    const member = ride.poolMember;
+    const member = ride.poolMembers[0];
     if (member && !member.leftAt) {
       // Release the seat and re-price whoever is left: if Nusrat leaves and Rafiq
       // is alone again, Rafiq's discount has to go away.

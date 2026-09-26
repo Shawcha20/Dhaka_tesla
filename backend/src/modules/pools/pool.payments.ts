@@ -66,7 +66,7 @@ export async function settlePoolPayments(
   const payments = await db.payment.findMany({
     where: {
       status: 'PENDING',
-      rideRequest: { poolMember: { poolId, leftAt: null } },
+      rideRequest: { poolMembers: { some: { poolId, leftAt: null } } },
     },
     select: {
       id: true,

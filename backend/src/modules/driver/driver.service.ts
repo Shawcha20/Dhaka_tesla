@@ -109,9 +109,11 @@ export async function listRelevantRequests(
   const requests = await prisma.rideRequest.findMany({
     where: {
       status: 'REQUESTED',
-      // Already-pooled requests are not on offer, even if still REQUESTED for a
-      // moment during a concurrent accept.
-      poolMember: null,
+      // Already-seated requests are not on offer, even if still REQUESTED for a
+      // moment during a concurrent accept. `none` rather than a null check,
+      // because a requeued request keeps its historical membership rows — only a
+      // row with leftAt: null means currently aboard.
+      poolMembers: { none: { leftAt: null } },
     },
     orderBy: { requestedAt: 'asc' },
     take: filters.limit,
