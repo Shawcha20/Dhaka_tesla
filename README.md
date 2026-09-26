@@ -983,6 +983,57 @@ curl http://localhost:4000/ready
 curl http://localhost:4000/api/v1/areas
 ```
 
+### Walking the whole story without a UI
+
+```bash
+node backend/scripts/demo-flow.mjs
+```
+
+Drives the brief's Banani scenario end to end against the running API and prints a
+readable transcript: Nusrat and Rafiq request overlapping trips, Jashim sees both
+flagged poolable with the bearing difference that decided it, pools them into Bullet,
+both fares drop, Shirin is refused the seat that no longer exists, and the trip runs to
+completion with payments settled. It is re-runnable — it clears state from a previous
+run first — and it asserts as it goes, so a wrong number fails rather than scrolls past.
+
+<details>
+<summary><b>Sample output</b></summary>
+
+```
+04. Nusrat prices Banani to Mohakhali before committing
+    distance 1.799 km
+    alone 46.99 BDT, shared 41.59 BDT
+
+07. Jashim goes online and looks at what is waiting
+    Nusrat → Mohakhali: 1 seat, 41.59 BDT if shared, bearing 174.5° — poolable
+    Rafiq → Gulshan 1: 1 seat, 41.47 BDT if shared, bearing 145.7° — poolable
+
+09. Jashim checks whether Rafiq can share the ride
+    Rafiq: compatible, 28.7° apart from the pool
+
+10. Jashim adds Rafiq — and both fares change
+    pool #1 — 2/3 seats
+    Nusrat Jahan → Mohakhali: now 41.59 BDT
+    Rafiq Hasan → Gulshan 1: now 41.47 BDT
+    Jashim collects 83.06 BDT for one trip
+
+11. Nusrat sees her own new price, and who she is sharing with
+    her fare: 41.59 BDT (quoted 46.99 BDT)
+    companions: [{"name":"Rafiq","dropoffArea":"Gulshan 1","seats":1}]
+
+12. Shirin tries to claim two seats — only one is left
+    409 POOL_CAPACITY_EXCEEDED — Not enough seats left.
+
+13. Jashim arrives, starts the trip — fares lock here — and completes it
+    Nusrat Jahan: 41.59 BDT by TESLAPAY — PAID
+    Rafiq Hasan: 41.47 BDT by CASH — PAID
+
+15. Jashim's trip history
+    trip #1: COMPLETED, 2 passenger(s), 2/3 seats (67%), earned 83.06 BDT
+```
+
+</details>
+
 ### Running outside Docker
 
 The API can run on the host against the containerised database — useful for
