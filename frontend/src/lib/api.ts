@@ -83,6 +83,20 @@ async function request<T>(
   body?: unknown,
   init?: { signal?: AbortSignal },
 ): Promise<{ data: T; meta?: unknown }> {
+  const payload = await send(method, path, body, init);
+
+  // 204 carries no body; callers of those endpoints ignore the result.
+  const envelope = (payload ?? { data: null }) as Envelope<T>;
+  return { data: envelope.data, meta: envelope.meta };
+}
+
+/** Performs the request and returns the parsed body, throwing ApiError on failure. */
+async function send(
+  method: string,
+  path: string,
+  body?: unknown,
+  init?: { signal?: AbortSignal },
+): Promise<unknown> {
   const res = await fetch(`${BASE}${path}`, {
     method,
     // Required for the auth cookies to be sent at all.
@@ -120,14 +134,24 @@ async function request<T>(
     );
   }
 
-  // 204 carries no body; callers of those endpoints ignore the result.
-  const envelope = (payload ?? { data: null }) as Envelope<T>;
-  return { data: envelope.data, meta: envelope.meta };
+  return payload;
 }
 
 export const api = {
   async get<T>(path: string, init?: { signal?: AbortSignal }): Promise<T> {
     return (await request<T>('GET', path, undefined, init)).data;
+  },
+
+  /**
+   * The whole response body, not unwrapped.
+   *
+   * For an endpoint whose body carries more than `data` at the top level. The
+   * driver's request feed is one: it answers `{ pool, data }`, and unwrapping it
+   * with `get` returns only the array — which silently dropped every waiting
+   * request, because the board then read `.data` off an array and got nothing.
+   */
+  async getBody<T>(path: string, init?: { signal?: AbortSignal }): Promise<T> {
+    return (await send('GET', path, undefined, init)) as T;
   },
 
   /** For endpoints whose `meta` matters — pagination cursors, settlement lines. */
