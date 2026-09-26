@@ -1,0 +1,71 @@
+# Render blueprint for the Dhaka Tesla Pool API.
+#
+# Render reads this from the repository root, so the whole backend service can be
+# created from the repo rather than clicked together in a dashboard — which also means
+# the deployment configuration is reviewable in git like everything else.
+#
+# The database is NOT defined here: Render's free tier offers PostgreSQL only, and this
+# project uses MySQL. A managed MySQL free tier (Aiven, or TiDB Cloud Serverless) supplies
+# DATABASE_URL instead. See the Deployment section of the README.
+
+services:
+  - type: web
+    name: dhaka-tesla-pool-api
+    runtime: docker
+    plan: free
+    region: singapore # closest region to Dhaka on the free tier
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+
+    # Render polls this before routing traffic, and rolls a deploy back if it never
+    # passes. /ready checks the database rather than merely that the process is up, so
+    # a release that cannot reach MySQL fails loudly instead of serving 500s.
+    healthCheckPath: /ready
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Render injects PORT; config/env.ts maps it onto API_PORT.
+      - key: PORT
+        value: 4000
+
+      # One proxy hop sits in front of the container, so express must trust exactly one
+      # to see real client IPs. Trusting more would let a caller spoof theirs and evade
+      # rate limiting.
+      - key: TRUST_PROXY_HOPS
+        value: 1
+
+      # The browser talks to the Vercel origin, which proxies here server-side, so the
+      # cookies it eventually receives are same-origin and Lax is correct. Without this
+      # the production default would be SameSite=None, which is both unnecessary here
+      # and weaker.
+      - key: COOKIE_SAMESITE
+        value: lax
+
+      - key: FARE_BASE_PAISA
+        value: 2000
+      - key: FARE_PER_KM_PAISA
+        value: 1500
+      - key: FARE_POOL_DISCOUNT_PCT
+        value: 20
+      - key: POOL_MAX_BEARING_DIFF_DEG
+        value: 45
+
+      - key: LOG_LEVEL
+        value: info
+
+      # sync: false means Render prompts for these instead of reading them from this
+      # file. Secrets must never be committed, and the API refuses to start on a
+      # placeholder value in production anyway.
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      # The deployed frontend origin. Not load-bearing while the frontend proxies
+      # server-side (no Origin header is sent), but set correctly so that a direct
+      # browser call from the app is allowed and anything else is not.
+      - key: CORS_ORIGIN
+        sync: false
