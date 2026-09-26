@@ -55,7 +55,9 @@ export interface RequestFeed {
 export function useRequestFeed(options: { enabled: boolean }) {
   return useQuery({
     queryKey: [...DRIVER_KEY, 'requests'],
-    queryFn: ({ signal }) => api.get<RequestFeed>('/driver/requests', { signal }),
+    // getBody, not get: `pool` sits beside `data` at the top level of this response,
+    // and `get` would unwrap it down to the bare array.
+    queryFn: ({ signal }) => api.getBody<RequestFeed>('/driver/requests', { signal }),
     enabled: options.enabled,
     refetchInterval: options.enabled ? 4_000 : false,
     // The feed is a live list, so a stale render is worse than a brief spinner.
