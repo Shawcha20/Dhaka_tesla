@@ -52,7 +52,8 @@ export interface CancellationStanding {
 export interface RequestFeed {
   pool: { id: number; seatsTaken: number; capacity: number } | null;
   data: DriverRequest[];
-  standing: CancellationStanding;
+  /** Absent from an API older than this client; always check before reading. */
+  standing?: CancellationStanding;
 }
 
 /**

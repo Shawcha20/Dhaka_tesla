@@ -61,7 +61,9 @@ export function RequestBoard({ isOnline }: { isOnline: boolean }) {
 
   // While suspended the requests stay visible, so the driver can see what they are
   // missing, but nothing can be accepted. The reason is shown above the board.
-  const suspended = Boolean(feed.data?.standing.suspendedUntil);
+  // Optional chaining on standing too: it is absent from an API older than this
+  // client, and a frontend deploy routinely lands before the API it talks to.
+  const suspended = Boolean(feed.data?.standing?.suspendedUntil);
 
   const poolable = requests.filter((r) => r.poolable.eligible);
   const rest = requests.filter((r) => !r.poolable.eligible);
