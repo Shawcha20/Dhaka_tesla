@@ -1,0 +1,59 @@
+@import 'tailwindcss';
+
+/**
+ * Tailwind v4 configures in CSS. These tokens become utilities automatically —
+ * `--color-brand-500` gives `bg-brand-500`, `text-brand-500` and so on.
+ *
+ * The palette is deliberately small: one brand green for actions, one amber for
+ * "waiting" states, one red for refusals, and a neutral ramp. A ride-pooling UI
+ * mostly communicates status, so the colours are chosen to be distinguishable at a
+ * glance rather than to be decorative.
+ */
+@theme {
+  --color-brand-50: oklch(0.96 0.03 155);
+  --color-brand-100: oklch(0.92 0.06 155);
+  --color-brand-200: oklch(0.86 0.1 155);
+  --color-brand-400: oklch(0.7 0.15 155);
+  --color-brand-500: oklch(0.61 0.16 155);
+  --color-brand-600: oklch(0.52 0.15 155);
+  --color-brand-700: oklch(0.43 0.13 155);
+
+  --color-amber-ink: oklch(0.45 0.12 70);
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+}
+
+/* Respects the reduced-motion preference rather than assuming everyone wants
+   transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-neutral-50 text-neutral-900 antialiased;
+}
+
+/* A visible focus ring everywhere, since this app is mostly forms and buttons.
+   Removing focus styling is the single most common accessibility regression. */
+:focus-visible {
+  @apply outline-brand-600 outline-2 outline-offset-2;
+}
+
+/* Tabular figures for money and seat counts, so digits do not jitter as values
+   change during polling. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
