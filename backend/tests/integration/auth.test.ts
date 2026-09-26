@@ -404,6 +404,218 @@ describe.skipIf(!hasDatabase)('authentication', () => {
       expect(stillValid.status).toBe(200);
     });
   });
+
+  describe('PATCH /auth/me', () => {
+    /** Registers Nusrat and returns her access cookie. */
+    async function signIn(): Promise<string> {
+      const res = await request(app).post('/api/v1/auth/register').send(NUSRAT);
+      return `dtp_access=${cookieValue(res, 'dtp_access')}`;
+    }
+
+    it('updates the name and answers with the full profile', async () => {
+      const cookie = await signIn();
+
+      const res = await request(app)
+        .patch('/api/v1/auth/me')
+        .set('Cookie', cookie)
+        .send({ name: 'Nusrat J. Khan' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toMatchObject({
+        name: 'Nusrat J. Khan',
+        email: NUSRAT.email,
+        role: 'PASSENGER',
+      });
+      // The full /auth/me shape, not the bare user — the client writes this straight
+      // into its session cache, and a smaller shape would lose the wallet.
+      expect(res.body.data).toHaveProperty('walletBalancePaisa');
+      expect(res.body.data).toHaveProperty('vehicle');
+    });
+
+    it('leaves the phone alone when the field is omitted', async () => {
+      const cookie = await signIn();
+
+      await request(app)
+        .patch('/api/v1/auth/me')
+        .set('Cookie', cookie)
+        .send({ name: 'Nusrat Jahan Khan' });
+
+      const me = await request(app).get('/api/v1/auth/me').set('Cookie', cookie);
+      expect(me.body.data.phone).toBe(NUSRAT.phone);
+    });
+
+    it('clears the phone when it is sent as null', async () => {
+      const cookie = await signIn();
+
+      const res = await request(app)
+        .patch('/api/v1/auth/me')
+        .set('Cookie', cookie)
+        .send({ phone: null });
+
+      // Omitting a field and sending null are different instructions, and the second
+      // one has to actually remove the value.
+      expect(res.status).toBe(200);
+      expect(res.body.data.phone).toBeNull();
+    });
+
+    it('rejects a body with nothing in it', async () => {
+      const cookie = await signIn();
+
+      const res = await request(app).patch('/api/v1/auth/me').set('Cookie', cookie).send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('VALIDATION_FAILED');
+    });
+
+    it('rejects a phone number that belongs to somebody else', async () => {
+      const cookie = await signIn();
+      await request(app)
+        .post('/api/v1/auth/register')
+        .send({
+          name: 'Rafiq Islam',
+          email: 'rafiq@dhakatesla.test',
+          phone: '+8801711000003',
+          password: 'TeslaPool#2026',
+        });
+
+      const res = await request(app)
+        .patch('/api/v1/auth/me')
+        .set('Cookie', cookie)
+        .send({ phone: '+8801711000003' });
+
+      // The unique index is the arbiter here, exactly as it is at signup.
+      expect(res.status).toBe(409);
+    });
+
+    it('refuses an unauthenticated request', async () => {
+      const res = await request(app).patch('/api/v1/auth/me').send({ name: 'Somebody Else' });
+
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe('POST /auth/password', () => {
+    const NEW_PASSWORD = 'BananiToMohakhali#7';
+
+    async function signIn(): Promise<{ access: string; refresh: string }> {
+      const res = await request(app).post('/api/v1/auth/register').send(NUSRAT);
+      return {
+        access: `dtp_access=${cookieValue(res, 'dtp_access')}`,
+        refresh: cookieValue(res, 'dtp_refresh') ?? '',
+      };
+    }
+
+    it('changes the password, and only the new one works afterwards', async () => {
+      const { access } = await signIn();
+
+      const change = await request(app)
+        .post('/api/v1/auth/password')
+        .set('Cookie', access)
+        .send({ currentPassword: NUSRAT.password, newPassword: NEW_PASSWORD });
+      expect(change.status).toBe(204);
+
+      const oldPassword = await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: NUSRAT.email, password: NUSRAT.password });
+      expect(oldPassword.status).toBe(401);
+
+      const newPassword = await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: NUSRAT.email, password: NEW_PASSWORD });
+      expect(newPassword.status).toBe(200);
+    });
+
+    it('revokes every existing session', async () => {
+      const { access, refresh } = await signIn();
+      const laptop = await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: NUSRAT.email, password: NUSRAT.password });
+
+      await request(app)
+        .post('/api/v1/auth/password')
+        .set('Cookie', access)
+        .send({ currentPassword: NUSRAT.password, newPassword: NEW_PASSWORD });
+
+      /**
+       * Both devices, not just the one that made the change.
+       *
+       * A password change usually means somebody else may have had access. Leaving
+       * their session alive would make the change cosmetic.
+       */
+      expect((await request(app).post('/api/v1/auth/refresh').send({ refreshToken: refresh })).status).toBe(401);
+      expect(
+        (
+          await request(app)
+            .post('/api/v1/auth/refresh')
+            .send({ refreshToken: cookieValue(laptop, 'dtp_refresh') })
+        ).status,
+      ).toBe(401);
+    });
+
+    it('clears the auth cookies, so no access token outlives the change', async () => {
+      const { access } = await signIn();
+
+      const res = await request(app)
+        .post('/api/v1/auth/password')
+        .set('Cookie', access)
+        .send({ currentPassword: NUSRAT.password, newPassword: NEW_PASSWORD });
+
+      // Revoking refresh tokens alone would leave the 15-minute access token usable.
+      expect(cookieValue(res, 'dtp_access')).toBeFalsy();
+      expect(cookieValue(res, 'dtp_refresh')).toBeFalsy();
+    });
+
+    it('refuses a wrong current password without changing anything', async () => {
+      const { access } = await signIn();
+
+      const res = await request(app)
+        .post('/api/v1/auth/password')
+        .set('Cookie', access)
+        .send({ currentPassword: 'NotHerPassword#1', newPassword: NEW_PASSWORD });
+
+      expect(res.status).toBe(401);
+      expect(res.body.error.code).toBe('INVALID_CREDENTIALS');
+
+      const stillWorks = await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: NUSRAT.email, password: NUSRAT.password });
+      expect(stillWorks.status).toBe(200);
+    });
+
+    it('refuses a new password identical to the current one', async () => {
+      const { access } = await signIn();
+
+      const res = await request(app)
+        .post('/api/v1/auth/password')
+        .set('Cookie', access)
+        .send({ currentPassword: NUSRAT.password, newPassword: NUSRAT.password });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'newPassword' })]),
+      );
+    });
+
+    it('refuses a new password that is too short', async () => {
+      const { access } = await signIn();
+
+      const res = await request(app)
+        .post('/api/v1/auth/password')
+        .set('Cookie', access)
+        .send({ currentPassword: NUSRAT.password, newPassword: 'short' });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('refuses an unauthenticated request', async () => {
+      const res = await request(app)
+        .post('/api/v1/auth/password')
+        .send({ currentPassword: NUSRAT.password, newPassword: NEW_PASSWORD });
+
+      expect(res.status).toBe(401);
+    });
+  });
+
 });
 
 describe.skipIf(hasDatabase)('authentication (skipped)', () => {
