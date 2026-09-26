@@ -1337,12 +1337,30 @@ paying, and the alternative was spending money the brief tells us not to spend.
 The order matters: each step needs a value the previous one produces.
 
 **1. Database — [Aiven for MySQL](https://aiven.io/free-mysql-database) free tier.**
-Create a MySQL 8 service and copy its connection URI. Aiven requires TLS, so append the
-parameter Prisma expects:
+Create a MySQL 8 service and copy its connection URI.
+
+**The URI Aiven gives you does not work with Prisma unchanged.** It ends with
+`?ssl-mode=REQUIRED`, which is a MySQL *command-line* flag; Prisma does not recognise it
+and silently ignores it, so the connection falls through to an unencrypted attempt that
+Aiven then rejects. This was verified against a live service — three parameter forms were
+tried and only the ones below behave correctly.
+
+Replace that parameter:
 
 ```
-mysql://USER:PASSWORD@HOST:PORT/defaultdb?sslaccept=strict
+mysql://USER:PASSWORD@HOST:PORT/defaultdb?sslaccept=strict&sslcert=/app/prisma/aiven-ca.pem
 ```
+
+Aiven signs its certificates with its own private CA, so `sslaccept=strict` alone fails
+with *"terminated in a root certificate which is not trusted"*. Download the CA from
+**Connection information → CA certificate**, save it as `backend/prisma/aiven-ca.pem`, and
+commit it — a CA certificate is what a client uses to *verify* a server, so publishing it
+gives nothing away. It is copied into the image automatically, since the Dockerfile
+already ships the whole `prisma/` directory.
+
+Without that file, `?sslaccept=accept_invalid_certs` connects and encrypts but does not
+verify the server's identity, which leaves the connection open to a man-in-the-middle. It
+is a usable fallback, not the right answer.
 
 **2. Backend — [Render](https://render.com).** The repository root holds
 [`render.yaml`](render.yaml), so the service is created from a blueprint that lives in

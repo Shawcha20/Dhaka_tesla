@@ -55,6 +55,14 @@ services:
       - key: LOG_LEVEL
         value: info
 
+      # On by default here, unlike the image default, because this deployment exists
+      # to be demonstrated: without it the app comes up with no Dhaka areas and no
+      # accounts to sign in with. The seed is idempotent — every write is an upsert
+      # keyed on a natural unique column — so it is safe on every restart and never
+      # duplicates or overwrites real activity.
+      - key: SEED_ON_START
+        value: true
+
       # sync: false means Render prompts for these instead of reading them from this
       # file. Secrets must never be committed, and the API refuses to start on a
       # placeholder value in production anyway.
