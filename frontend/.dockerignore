@@ -1,0 +1,22 @@
+# Keeping the build context tight makes builds faster, and means secrets that never
+# enter the context cannot end up in a layer.
+
+node_modules
+.next
+out
+
+# Secrets — the container is configured through the environment.
+.env
+.env.*
+!.env.example
+
+# Local noise
+*.log
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+.vercel
+
+Dockerfile
+.dockerignore
