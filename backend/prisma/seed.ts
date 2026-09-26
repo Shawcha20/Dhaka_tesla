@@ -71,14 +71,35 @@ const PEOPLE = [
     // INSUFFICIENT_WALLET_BALANCE path demonstrable without editing data.
     walletPaisa: 4_500n,
   },
+  // Two more drivers, so the multi-driver rules can be seen rather than only
+  // described: a ride one driver cancels stays open to the others, and two
+  // drivers racing to accept the same request resolve to exactly one.
+  {
+    name: 'Kamal Hossain',
+    email: 'kamal@dhakatesla.test',
+    phone: '+8801711000005',
+    role: Role.DRIVER,
+    walletPaisa: null,
+  },
+  {
+    name: 'Babul Mia',
+    email: 'babul@dhakatesla.test',
+    phone: '+8801711000006',
+    role: Role.DRIVER,
+    walletPaisa: null,
+  },
 ] as const;
 
-/** Bullet. Three seats, which is the number the whole pooling story turns on. */
-const BULLET = {
-  name: 'Bullet',
-  plateNo: 'DHA-TESLA-01',
-  capacity: 3,
-} as const;
+/**
+ * One vehicle per driver. Bullet is the brief's, and its three seats are the number
+ * the whole pooling story turns on; the other two match it so no demo outcome
+ * depends on which driver happens to accept.
+ */
+const VEHICLES = [
+  { owner: 'jashim@dhakatesla.test', name: 'Bullet', plateNo: 'DHA-TESLA-01', capacity: 3 },
+  { owner: 'kamal@dhakatesla.test', name: 'Toofan', plateNo: 'DHA-TESLA-02', capacity: 3 },
+  { owner: 'babul@dhakatesla.test', name: 'Rocket', plateNo: 'DHA-TESLA-03', capacity: 3 },
+] as const;
 
 async function main(): Promise<void> {
   console.warn('Seeding Dhaka Tesla Pool...');
@@ -94,7 +115,7 @@ async function main(): Promise<void> {
   console.warn(`  areas:    ${AREAS.length}`);
 
   // ── People ───────────────────────────────────────────────────────────────
-  // Hashed once and reused: argon2 is intentionally slow, and four sequential
+  // Hashed once and reused: argon2 is intentionally slow, and six sequential
   // hashes at these parameters is a noticeable chunk of the seed's runtime.
   const passwordHash = await hashPassword(DEMO_PASSWORD);
 
@@ -137,17 +158,19 @@ async function main(): Promise<void> {
   }
   console.warn(`  people:   ${PEOPLE.length} (password for all: ${DEMO_PASSWORD})`);
 
-  // ── Bullet ───────────────────────────────────────────────────────────────
-  const jashim = await prisma.user.findUniqueOrThrow({
-    where: { email: 'jashim@dhakatesla.test' },
-  });
+  // ── Vehicles ─────────────────────────────────────────────────────────────
+  for (const { owner, ...vehicle } of VEHICLES) {
+    const driver = await prisma.user.findUniqueOrThrow({ where: { email: owner } });
 
-  await prisma.vehicle.upsert({
-    where: { plateNo: BULLET.plateNo },
-    update: { name: BULLET.name, capacity: BULLET.capacity, driverId: jashim.id },
-    create: { ...BULLET, driverId: jashim.id },
-  });
-  console.warn(`  vehicle:  ${BULLET.name} (${BULLET.capacity} seats, ${BULLET.plateNo})`);
+    await prisma.vehicle.upsert({
+      where: { plateNo: vehicle.plateNo },
+      update: { name: vehicle.name, capacity: vehicle.capacity, driverId: driver.id },
+      create: { ...vehicle, driverId: driver.id },
+    });
+    console.warn(
+      `  vehicle:  ${vehicle.name} (${vehicle.capacity} seats, ${vehicle.plateNo}) — ${driver.name}`,
+    );
+  }
 
   console.warn('Seed complete.');
 }

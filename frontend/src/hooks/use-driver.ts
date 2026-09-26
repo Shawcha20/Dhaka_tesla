@@ -40,9 +40,19 @@ export function useVehicleStatus() {
   });
 }
 
+/** How many trips this driver has cancelled recently, against the limit. */
+export interface CancellationStanding {
+  used: number;
+  limit: number;
+  windowHours: number;
+  /** Present only while suspended from accepting: when that ends. */
+  suspendedUntil: string | null;
+}
+
 export interface RequestFeed {
   pool: { id: number; seatsTaken: number; capacity: number } | null;
   data: DriverRequest[];
+  standing: CancellationStanding;
 }
 
 /**

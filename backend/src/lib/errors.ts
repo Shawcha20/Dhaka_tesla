@@ -56,6 +56,14 @@ export const ERROR_CATALOG = {
     message: 'Your TeslaPay balance is too low for this fare.',
   },
   POOL_IN_PROGRESS: { status: 409, message: 'You cannot go offline during a trip.' },
+  RIDE_PREVIOUSLY_CANCELLED_BY_YOU: {
+    status: 409,
+    message: 'You cancelled a trip with this passenger. It stays open for other drivers.',
+  },
+  DRIVER_CANCEL_LIMIT_REACHED: {
+    status: 409,
+    message: 'You have cancelled too many trips recently to accept new ones yet.',
+  },
 
   /* 422 — semantically invalid rather than malformed. */
   SAME_PICKUP_AND_DROPOFF: {

@@ -295,6 +295,37 @@ pooled fare for a pool they failed to join.
 
 </details>
 
+### When a driver cancels
+
+A driver may cancel a trip any time before it starts. The passengers did not give
+up, so they are **not** cancelled: they return to `REQUESTED`, recorded as a
+`SYSTEM` transition, and every other driver can take them. Two consequences land on
+the driver instead:
+
+- **They are not offered those passengers again.** The request disappears from their
+  board, and accepting it anyway (from a stale screen) is refused with
+  `409 RIDE_PREVIOUSLY_CANCELLED_BY_YOU`. Otherwise a driver could accept and drop the
+  same passenger repeatedly, holding them out of everyone else's reach.
+- **Cancelling too often suspends accepting.** At `DRIVER_CANCEL_LIMIT` cancellations
+  (default 3) inside a rolling `DRIVER_CANCEL_WINDOW_HOURS` (default 24), new trips are
+  refused with `409 DRIVER_CANCEL_LIMIT_REACHED` until the oldest of them ages out.
+  Rolling, not per calendar day, so a burst just before midnight does not reset
+  minutes later.
+
+The cancel itself is never refused. A driver whose battery has died has to be able to
+release their passengers; a rule that trapped them in a trip they cannot make would
+hurt the passengers most. So the penalty is on what the driver accepts *next*.
+
+Both rules are read from history that already exists — a pool reaches `CANCELLED`
+only through its own driver, and membership rows survive a cancel with `left_at`
+set — so there is no separate counter to drift out of step. The driver's feed
+reports `standing` (`used`, `limit`, `windowHours`, `suspendedUntil`) on every poll,
+so the UI warns before the limit rather than only refusing after it.
+
+The limit applies to drivers only. A passenger cancelling their own request frees a
+seat nobody was relying on yet, and after a match it frees one that another passenger
+can take; a passenger-side limit is listed under next improvements.
+
 ## Pooling: the matching rule
 
 Two requests may share a Tesla when **all** of the following hold:
@@ -1164,7 +1195,9 @@ front of a user.
 Fare constants (`FARE_BASE_PAISA`, `FARE_PER_KM_PAISA`,
 `FARE_POOL_DISCOUNT_PCT`) and the matching threshold
 (`POOL_MAX_BEARING_DIFF_DEG`) are environment variables specifically so the model can
-be re-tested by hand without touching code.
+be re-tested by hand without touching code. So is the driver cancellation limit
+(`DRIVER_CANCEL_LIMIT`, `DRIVER_CANCEL_WINDOW_HOURS` — 3 per rolling 24 hours by
+default), so the suspension can be demonstrated without waiting a day.
 
 ## Migrations and seed data
 
@@ -1205,6 +1238,12 @@ Password is the same for every account: **`TeslaPool#2026`**
 | Passenger | `nusrat@dhakatesla.test` | 500.00 BDT TeslaPay balance |
 | Passenger | `rafiq@dhakatesla.test` | 500.00 BDT — pools with Nusrat from Banani |
 | Passenger | `shirin@dhakatesla.test` | **45.00 BDT only** — enough for a pooled fare but not a solo one, so the `INSUFFICIENT_WALLET_BALANCE` path is demonstrable without editing data |
+| Driver | `kamal@dhakatesla.test` | Owns Toofan — `DHA-TESLA-02`, 3 seats |
+| Driver | `babul@dhakatesla.test` | Owns Rocket — `DHA-TESLA-03`, 3 seats |
+
+Three drivers so the multi-driver rules are visible: sign in as Jashim and Kamal in
+two browsers, have Jashim accept and then cancel Nusrat's ride, and it vanishes from
+his board while staying on Kamal's.
 
 These are seeded demo accounts in a throwaway database. No real credentials appear
 anywhere in this repository.
@@ -1285,7 +1324,7 @@ the `x-request-id` header and the server log line, so any reported error is trac
 | | `GET /rides/:id` | One ride: fare breakdown, pool, timeline |
 | | `PATCH /rides/:id/cancel` | Cancel while valid |
 | **Driver** | `PATCH /driver/status` | Go online / offline |
-| | `GET /driver/requests` | Open requests, each flagged poolable or not |
+| | `GET /driver/requests` | Open requests, each flagged poolable or not, minus any this driver dropped; plus their cancellation `standing` |
 | | `POST /driver/pools` | Accept a request, open a pool |
 | | `POST /driver/pools/:id/members` | Add a passenger — the race-critical endpoint |
 | | `GET /driver/pools/current` | Active trip: members, seats, fares |
@@ -1316,6 +1355,8 @@ so the API does not confirm that someone else's ride id exists.
 | `PASSENGER_HAS_ACTIVE_RIDE` | 409 | One active ride per passenger |
 | `DRIVER_HAS_ACTIVE_POOL` | 409 | One active pool per driver |
 | `RIDE_ALREADY_MATCHED` | 409 | Another driver accepted it first |
+| `RIDE_PREVIOUSLY_CANCELLED_BY_YOU` | 409 | This driver cancelled a trip carrying that passenger; it stays open to others |
+| `DRIVER_CANCEL_LIMIT_REACHED` | 409 | Too many cancellations in the window; the message says when accepting resumes |
 | `POOL_CAPACITY_EXCEEDED` | 409 | No seats left — the race loser |
 | `POOL_NOT_FORMING` | 409 | Pool no longer accepts members |
 | `POOL_EMPTY` | 409 | Cannot start a trip with no passengers |
@@ -1432,6 +1473,8 @@ is set, so one image runs unchanged locally and on Render.
 - Reservation-then-confirm on seat claims, so the UI stops offering seats that are
   already being claimed
 - Idempotency keys on join and create, making client retries free
+- A passenger-side cancellation policy (a fee after a match, say), alongside the
+  driver limit that exists now
 - SSE for status updates, replacing polling
 - Real lat/lng pickups with a detour-ratio matching rule
 - Driver ratings, and a cancellation-fee policy

@@ -47,7 +47,7 @@ done
 # natural unique column — but a production database should not be reseeded on
 # every deploy, so the default is off and compose turns it on.
 if [ "${SEED_ON_START:-false}" = "true" ]; then
-  echo "==> Seeding demo data (Jashim, Bullet, Nusrat, Rafiq, Shirin)"
+  echo "==> Seeding demo data (drivers Jashim, Kamal, Babul; passengers Nusrat, Rafiq, Shirin)"
   node dist/prisma/seed.js
 fi
 
