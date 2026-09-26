@@ -17,6 +17,7 @@ discounted fare, without the vehicle ever being overbooked.
 
 - [The problem](#the-problem)
 - [Features](#features)
+- [Screenshots](#screenshots)
 - [Architecture](#architecture)
 - [The ride lifecycle](#the-ride-lifecycle)
 - [Pooling: the matching rule](#pooling-the-matching-rule)
@@ -90,6 +91,11 @@ Everything in this design serves those three constraints.
 - [x] Each passenger gets an individually calculated fare
 - [x] Fares recalculate when the pool changes, and lock when the trip starts
 - [x] Full audit trail of every status change, who caused it and when
+
+## Screenshots
+
+_TODO — passenger request form with the live fare quote, the ride tracker mid-pool, and
+the driver's request board. Captured once the driver UI lands._
 
 ## Architecture
 
@@ -1382,6 +1388,6 @@ Each item is one feature branch merged into `master`.
 - [x] Driver flow and payment settlement
 - [x] Docker Compose setup
 - [x] Frontend scaffold and auth screens
-- [ ] Passenger UI
+- [x] Passenger UI
 - [ ] Driver UI
 - [ ] Integration pass, deployment and demo video
