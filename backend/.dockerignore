@@ -1,0 +1,31 @@
+# Anything not needed to build the image. Keeping this tight matters twice over:
+# a smaller build context is faster, and secrets that never enter the context
+# cannot end up in a layer.
+
+node_modules
+dist
+coverage
+.turbo
+
+# Secrets — the container gets its configuration from the environment.
+.env
+.env.*
+!.env.example
+
+# Tests and tooling are not part of the runtime.
+tests
+vitest.config.ts
+eslint.config.js
+.prettierrc.json
+
+# Local noise
+*.log
+logs
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Docker files themselves (the entrypoint is copied explicitly)
+Dockerfile
+.dockerignore
