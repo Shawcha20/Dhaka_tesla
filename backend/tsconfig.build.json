@@ -1,10 +1,18 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "rootDir": "src",
+    /**
+     * rootDir is the package root, not src, so that prisma/seed.ts compiles
+     * alongside the app: the container needs a plain-JS seed it can run without
+     * carrying tsx and the TypeScript sources into the runtime image.
+     *
+     * Output is therefore dist/src/... and dist/prisma/seed.js, and the relative
+     * import between them still resolves.
+     */
+    "rootDir": ".",
     "outDir": "dist",
     "sourceMap": false
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "tests", "prisma", "**/*.test.ts"]
+  "include": ["src/**/*.ts", "prisma/seed.ts"],
+  "exclude": ["node_modules", "dist", "tests", "**/*.test.ts"]
 }
