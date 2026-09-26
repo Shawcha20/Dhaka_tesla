@@ -13,6 +13,10 @@
 
 generator client {
   provider = "prisma-client-js"
+  // The container runs Debian while developers are on Windows or macOS, and
+  // Prisma ships a separate query engine per platform. Without the second target
+  // the image builds fine and then fails at its first query.
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -221,9 +225,16 @@ model RideRequest {
 
   passenger       User                @relation("PassengerRides", fields: [passengerId], references: [id], onDelete: Restrict)
   cancelledByUser User?               @relation("RidesCancelledBy", fields: [cancelledBy], references: [id], onDelete: SetNull)
-  pickupArea      Area                @relation("PickupArea", fields: [pickupAreaId], references: [id], onDelete: Restrict)
-  dropoffArea     Area                @relation("DropoffArea", fields: [dropoffAreaId], references: [id], onDelete: Restrict)
-  poolMember      PoolMember?
+  /// onUpdate: NoAction is required, not stylistic. MySQL refuses a CHECK
+  /// constraint on a column whose foreign key carries a CASCADE or SET NULL
+  /// referential action (error 3823), and `chk_rides_distinct_areas` checks both
+  /// of these columns. NoAction is also the more accurate rule: an area id is a
+  /// surrogate key and never changes, so there is nothing to cascade.
+  pickupArea      Area                @relation("PickupArea", fields: [pickupAreaId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  dropoffArea     Area                @relation("DropoffArea", fields: [dropoffAreaId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  /// Plural because a requeued request can be seated again in another pool. At
+  /// most one of these ever has `leftAt: null`.
+  poolMembers     PoolMember[]
   statusHistory   RideStatusHistory[]
   payment         Payment?
   walletEntries   WalletTransaction[]
@@ -288,7 +299,7 @@ model Pool {
 model PoolMember {
   id            BigInt @id @default(autoincrement()) @db.UnsignedBigInt
   poolId        BigInt @map("pool_id") @db.UnsignedBigInt
-  rideRequestId BigInt @unique @map("ride_request_id") @db.UnsignedBigInt
+  rideRequestId BigInt @map("ride_request_id") @db.UnsignedBigInt
   seats         Int    @db.UnsignedTinyInt
   farePaisa     BigInt @map("fare_paisa") @db.UnsignedBigInt
 
@@ -298,13 +309,20 @@ model PoolMember {
   pool        Pool        @relation(fields: [poolId], references: [id], onDelete: Cascade)
   rideRequest RideRequest @relation(fields: [rideRequestId], references: [id], onDelete: Cascade)
 
-  /// The active-member list the driver sees.
+  /// Idempotency: a retried or double-clicked join cannot book a second seat in
+  /// the same pool.
   ///
-  /// Note there is deliberately no additional UNIQUE(pool_id, ride_request_id):
-  /// the global @unique on rideRequestId above is strictly stronger and already
-  /// makes a retried join fail. A composite unique would be a redundant index
-  /// paying write cost on every insert for a guarantee we already have.
+  /// Composite rather than a global unique on rideRequestId. A global unique would
+  /// read as "a request belongs to one pool, ever" — which contradicts requeueing:
+  /// when a driver cancels a pool its members return to REQUESTED and must be able
+  /// to join a *different* pool. The historical row stays, so the trail is intact,
+  /// and exclusivity across pools is enforced where it actually belongs: the
+  /// atomic REQUESTED → MATCHED transition, which only one claimant can win.
+  @@unique([poolId, rideRequestId])
+  /// The active-member list the driver sees, and the lookup for "is this request
+  /// currently seated anywhere".
   @@index([poolId, leftAt])
+  @@index([rideRequestId, leftAt])
   @@map("pool_members")
 }
 
@@ -331,8 +349,13 @@ model RideStatusHistory {
   /// orderable, which matters precisely in the contested-seat scenario.
   createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
 
-  rideRequest RideRequest? @relation(fields: [rideRequestId], references: [id], onDelete: Cascade)
-  pool        Pool?        @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  /// onUpdate: NoAction for the same reason as ride_requests' area keys —
+  /// `chk_history_has_subject` checks both of these columns, and MySQL will not
+  /// allow a CHECK alongside a cascading referential action on them.
+  rideRequest RideRequest? @relation(fields: [rideRequestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  pool        Pool?        @relation(fields: [poolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  /// Not referenced by any CHECK, so SetNull is free to stay: a deleted user
+  /// should leave the audit entry intact but anonymous.
   actor       User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([rideRequestId, createdAt])
