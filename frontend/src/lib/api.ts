@@ -87,6 +87,20 @@ async function request<T>(
     method,
     // Required for the auth cookies to be sent at all.
     credentials: 'include',
+    /**
+     * Bypasses the browser's HTTP cache on every call.
+     *
+     * Everything this client fetches is live state, and a cached copy is
+     * indistinguishable from a fresh one to the caller. That caused a real bug: the
+     * driver's request board polls every few seconds, but the browser kept serving
+     * a stale empty response, so a driver saw "nobody waiting" while passengers
+     * were queued.
+     *
+     * The API also sends no-store, but this does not depend on that — a client that
+     * can only be correct when a server two hops away is configured right is not
+     * actually correct.
+     */
+    cache: 'no-store',
     headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     ...(init?.signal ? { signal: init.signal } : {}),
