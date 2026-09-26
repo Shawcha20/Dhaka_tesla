@@ -5,6 +5,7 @@ import helmet from 'helmet';
 
 import { env } from './config/env.js';
 import { jsonReplacer } from './lib/json.js';
+import { noStore } from './middleware/cacheControl.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { globalLimiter } from './middleware/rateLimit.js';
 import { requestContext } from './middleware/requestContext.js';
@@ -30,6 +31,10 @@ export function createApp(): Express {
 
   // First, so every later log line and error response carries a request id.
   app.use(requestContext);
+
+  // Applied to everything, including errors: a cached 401 or a cached "nobody
+  // waiting" is as damaging as a cached success.
+  app.use(noStore);
 
   app.use(
     helmet({

@@ -87,6 +87,35 @@ describe('health endpoints', () => {
   });
 });
 
+describe('cache headers', () => {
+  it('forbids storing any response', async () => {
+    const res = await request(createApp()).get('/health');
+
+    /**
+     * Without an explicit directive a cache may apply its own heuristic and reuse
+     * a response it was never told it could. That produced a real bug: the
+     * driver's feed polls every few seconds, but the browser served its own stale
+     * copy, so a driver saw "nobody waiting" while passengers were queued.
+     */
+    expect(res.headers['cache-control']).toContain('no-store');
+    expect(res.headers['cache-control']).toContain('private');
+  });
+
+  it('varies on Cookie, so no cache can cross users', async () => {
+    const res = await request(createApp()).get('/health');
+
+    expect(res.headers['vary']).toMatch(/cookie/i);
+  });
+
+  it('applies to error responses too', async () => {
+    // A cached 401 would strand a user who has since signed in.
+    const res = await request(createApp()).get('/api/v1/nope');
+
+    expect(res.status).toBe(404);
+    expect(res.headers['cache-control']).toContain('no-store');
+  });
+});
+
 describe('error envelope', () => {
   it('returns a structured 404 for an unknown route', async () => {
     const res = await request(createApp()).get('/api/v1/nope');
