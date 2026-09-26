@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 import { SeatMeter } from '@/components/driver/seat-meter';
 import { Alert, Badge, Button, Card, Field, LiveDot, Reveal, TextInput } from '@/components/ui';
-import { useCancelPool, useTripAction } from '@/hooks/use-driver';
+import { useCancelPool, useTripAction, type CancellationStanding } from '@/hooks/use-driver';
 import { ApiError } from '@/lib/api';
 import { formatKm, formatTaka, formatTime, poolStatusLabel } from '@/lib/format';
 import type { PoolDetail, SettlementLine } from '@/lib/types';
@@ -16,7 +16,13 @@ const NEXT_ACTION = {
   STARTED: { action: 'complete', label: 'Complete the trip' },
 } as const;
 
-export function ActiveTrip({ pool }: { pool: PoolDetail }) {
+export function ActiveTrip({
+  pool,
+  standing,
+}: {
+  pool: PoolDetail;
+  standing: CancellationStanding | null;
+}) {
   const tripAction = useTripAction();
   const cancelPool = useCancelPool();
 
@@ -190,7 +196,7 @@ export function ActiveTrip({ pool }: { pool: PoolDetail }) {
                 <Field
                   label="What happened?"
                   htmlFor="cancel-reason"
-                  hint="Your passengers will be put back in the queue for another driver."
+                  hint={cancelHint(standing)}
                 >
                   <TextInput
                     id="cancel-reason"
@@ -287,4 +293,23 @@ function SettlementSummary({ lines }: { lines: SettlementLine[] }) {
       )}
     </Card>
   );
+}
+
+/**
+ * What cancelling will cost, said before the driver confirms.
+ *
+ * The passengers are not harmed by it - they go back to the queue for other
+ * drivers - but the driver is, and the last cancellation before the limit should
+ * never come as a surprise.
+ */
+function cancelHint(standing: CancellationStanding | null): string {
+  const requeue =
+    'Your passengers go back in the queue for other drivers, and you will not be offered them again.';
+  if (!standing) return requeue;
+
+  const after = standing.used + 1;
+  if (after >= standing.limit) {
+    return `${requeue} This is cancellation ${after} of ${standing.limit}: you will not be able to accept new trips for a while.`;
+  }
+  return `${requeue} This counts as cancellation ${after} of ${standing.limit} in ${standing.windowHours} hours.`;
 }

@@ -59,6 +59,10 @@ export function RequestBoard({ isOnline }: { isOnline: boolean }) {
     );
   }
 
+  // While suspended the requests stay visible, so the driver can see what they are
+  // missing, but nothing can be accepted. The reason is shown above the board.
+  const suspended = Boolean(feed.data?.standing.suspendedUntil);
+
   const poolable = requests.filter((r) => r.poolable.eligible);
   const rest = requests.filter((r) => !r.poolable.eligible);
 
@@ -68,7 +72,7 @@ export function RequestBoard({ isOnline }: { isOnline: boolean }) {
           scarce resource, not screen space. */}
       {poolable.map((request, index) => (
         <Reveal key={request.id} delay={index * 60}>
-          <RequestCard request={request} pool={feed.data?.pool ?? null} />
+          <RequestCard request={request} pool={feed.data?.pool ?? null} suspended={suspended} />
         </Reveal>
       ))}
 
@@ -79,7 +83,7 @@ export function RequestBoard({ isOnline }: { isOnline: boolean }) {
           </p>
           {rest.map((request, index) => (
             <Reveal key={request.id} delay={(poolable.length + index) * 60}>
-              <RequestCard request={request} pool={feed.data?.pool ?? null} />
+              <RequestCard request={request} pool={feed.data?.pool ?? null} suspended={suspended} />
             </Reveal>
           ))}
         </>
@@ -91,9 +95,11 @@ export function RequestBoard({ isOnline }: { isOnline: boolean }) {
 function RequestCard({
   request,
   pool,
+  suspended,
 }: {
   request: DriverRequest;
   pool: RequestFeed['pool'];
+  suspended: boolean;
 }) {
   const createPool = useCreatePool();
   const addMember = useAddMember();
@@ -166,7 +172,7 @@ function RequestCard({
           variant={eligible ? 'primary' : 'secondary'}
           size="sm"
           loading={pending}
-          disabled={!eligible}
+          disabled={!eligible || suspended}
           onClick={() => {
             if (hasPool) {
               addMember.mutate({ poolId: pool.id, rideRequestId: request.id });

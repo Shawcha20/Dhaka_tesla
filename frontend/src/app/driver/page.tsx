@@ -12,9 +12,16 @@ import {
   SkeletonRows,
   Switch,
 } from '@/components/ui';
-import { isActivePool, useCurrentPool, useVehicleStatus } from '@/hooks/use-driver';
+import {
+  isActivePool,
+  useCurrentPool,
+  useRequestFeed,
+  useVehicleStatus,
+  type CancellationStanding,
+} from '@/hooks/use-driver';
 import { useSession } from '@/hooks/use-session';
 import { ApiError } from '@/lib/api';
+import { formatTime } from '@/lib/format';
 
 /**
  * The driver's working screen.
@@ -30,6 +37,10 @@ export default function DriverPage() {
   const pool = currentPool.data && isActivePool(currentPool.data.status) ? currentPool.data : null;
   const isOnline = user?.vehicle?.isOnline ?? false;
 
+  // Same query key as the board's, so this shares its polling rather than adding
+  // a second request. Read here because the standing matters above the board too.
+  const standing = useRequestFeed({ enabled: isOnline }).data?.standing ?? null;
+
   return (
     <AppShell
       role="DRIVER"
@@ -37,6 +48,8 @@ export default function DriverPage() {
       actions={<OnlineToggle isOnline={isOnline} hasActiveTrip={pool !== null} />}
     >
       <div className="space-y-8">
+        {standing && <CancellationNotice standing={standing} />}
+
         {currentPool.isLoading ? (
           <SkeletonRows rows={2} />
         ) : currentPool.error ? (
@@ -45,7 +58,7 @@ export default function DriverPage() {
           </Alert>
         ) : pool ? (
           <Reveal as="section">
-            <ActiveTrip pool={pool} />
+            <ActiveTrip pool={pool} standing={standing} />
           </Reveal>
         ) : null}
 
@@ -62,6 +75,39 @@ export default function DriverPage() {
         </Reveal>
       </div>
     </AppShell>
+  );
+}
+
+/**
+ * The cancellation limit, stated before it bites.
+ *
+ * Silent until the driver has cancelled something, since a warning about a rule
+ * nobody has touched is noise. After that it counts down, and once the limit is
+ * reached it says exactly when accepting comes back, rather than leaving every
+ * Accept button disabled with no explanation.
+ */
+function CancellationNotice({ standing }: { standing: CancellationStanding }) {
+  if (standing.suspendedUntil) {
+    return (
+      <Alert tone="error" title="You can't accept new trips right now">
+        You cancelled {standing.used} trips in the last {standing.windowHours} hours; the
+        limit is {standing.limit}. Accepting comes back at{' '}
+        <strong className="tabular">{formatTime(standing.suspendedUntil)}</strong>.
+      </Alert>
+    );
+  }
+
+  if (standing.used === 0) return null;
+
+  const left = standing.limit - standing.used;
+  return (
+    <Alert tone="warning">
+      You have cancelled {standing.used} of {standing.limit} trips allowed in{' '}
+      {standing.windowHours} hours.{' '}
+      {left === 1
+        ? 'One more and you cannot accept new trips for a while.'
+        : `${left} more and you cannot accept new trips for a while.`}
+    </Alert>
   );
 }
 
