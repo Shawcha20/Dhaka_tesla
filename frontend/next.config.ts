@@ -1,39 +1,25 @@
 import type { NextConfig } from 'next';
 
-/**
- * Where the API actually lives. Server-side only — the browser never sees it,
- * because every request goes through the rewrite below.
- */
-const API_TARGET = process.env.API_PROXY_TARGET ?? 'http://localhost:4000';
-
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
 
   /**
-   * The API is proxied through this app rather than called directly, and that is a
-   * security decision rather than a convenience one.
-   *
-   * Deployed, the frontend (Vercel) and the API (Render) are different sites. A
-   * browser will only attach cookies to cross-site requests when they are marked
-   * SameSite=None, which removes exactly the protection SameSite exists to give —
-   * so the app would be relying on the CORS allowlist alone against CSRF.
-   *
-   * Proxying makes the pair same-origin from the browser's point of view. Cookies
-   * stay SameSite=Lax, CORS stops being involved at all, and the API's real
-   * hostname is never exposed to the client.
-   *
-   * The cost is one extra network hop through Vercel, which is a fair price for
-   * not weakening cookie policy.
+   * Emits a self-contained server plus only the node_modules actually reachable
+   * from it, which is what lets the container image skip a full `npm ci` and drop
+   * from hundreds of megabytes to tens.
    */
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: `${API_TARGET}/api/:path*`,
-      },
-    ];
-  },
+  output: 'standalone',
+
+  /**
+   * There is deliberately no `rewrites()` entry for the API here.
+   *
+   * Rewrites are resolved when the config is built and baked into the standalone
+   * output, so an image built without API_PROXY_TARGET set ships a hardcoded
+   * localhost — which inside a container points at the container itself. The proxy
+   * is a route handler instead (src/app/api/[...path]/route.ts), which reads the
+   * environment per request and keeps one image portable.
+   */
 };
 
 export default nextConfig;

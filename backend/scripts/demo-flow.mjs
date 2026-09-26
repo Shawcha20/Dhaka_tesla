@@ -11,9 +11,13 @@
  * Useful for three things: confirming a fresh deployment actually works, walking
  * through the product without a UI, and rehearsing the demo video.
  */
+/**
+ * Point this at the API directly, or at the frontend's proxy — both work:
+ *
+ *   API_BASE_URL=http://localhost:4000/api/v1        (the API)
+ *   API_BASE_URL=http://localhost:3000/api/v1        (through the web app)
+ */
 const BASE = process.env.API_BASE_URL ?? 'http://localhost:4000/api/v1';
-/** Health probes live outside the version prefix, so they need the bare origin. */
-const ORIGIN = new URL(BASE).origin;
 const PASSWORD = 'TeslaPool#2026';
 
 const taka = (paisa) => `${(paisa / 100).toFixed(2)} BDT`;
@@ -86,13 +90,17 @@ async function resetActors(driverToken, passengerTokens) {
 }
 
 async function main() {
-  say('Checking the API is up');
-  const ready = await fetch(`${ORIGIN}/ready`).then((r) => r.json());
-  detail(`readiness: ${JSON.stringify(ready.data)}`);
-  expect(ready.data?.status === 'ready', 'API is not ready — is docker compose up?');
-
-  say('Loading the Dhaka areas');
+  /**
+   * Reachability is checked with /areas rather than /ready, because /ready lives
+   * outside the version prefix and so is not proxied by the frontend — using it here
+   * would make this script work against the API but not through the web app.
+   */
+  say('Checking the API is reachable and seeded');
   const areas = await call('GET', '/areas');
+  expect(
+    areas.status === 200,
+    `API did not respond at ${BASE} — is docker compose up? (got ${areas.status})`,
+  );
   const byName = new Map(areas.body.data.map((a) => [a.name, a.id]));
   detail(`${areas.body.data.length} areas seeded`);
   const banani = byName.get('Banani');
