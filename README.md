@@ -890,11 +890,26 @@ cross-site if they were marked `SameSite=None` — which removes exactly the pro
 `SameSite` exists to give, leaving the CORS allowlist as the only defence.
 
 **Both problems are solved by proxying the API through the frontend.** A Next.js
-rewrite sends `/api/*` to the backend server-side, so from the browser's point of view
-everything is same-origin: cookies stay `SameSite=Lax`, CORS never enters the picture,
-and the API's real hostname is never exposed to the client. The cost is one extra
-network hop, which is a fair price for not weakening cookie policy. See
-[`frontend/next.config.ts`](frontend/next.config.ts).
+route handler sends `/api/*` to the backend server-side, so from the browser's point of
+view everything is same-origin: cookies stay `SameSite=Lax`, CORS never enters the
+picture, and the API's real hostname is never exposed to the client. The cost is one
+extra network hop, which is a fair price for not weakening cookie policy. See
+[`frontend/src/app/api/[...path]/route.ts`](frontend/src/app/api/%5B...path%5D/route.ts).
+
+**Why a route handler and not a `rewrites()` entry**, which would be the obvious choice:
+Next resolves rewrites when the config is *built* and bakes the destination into the
+standalone output. An image built without `API_PROXY_TARGET` set therefore ships a
+hardcoded `localhost:4000` — which, inside the web container, points at the web
+container itself. That failed exactly that way the first time the stack came up. A route
+handler reads the environment per request, so one image works locally, in Compose and on
+Vercel.
+
+Two details in that handler are easy to get wrong and both break sign-in silently.
+Hop-by-hop headers (`connection`, `transfer-encoding`, `host`, `content-length`) are
+stripped rather than forwarded, since they describe this connection and not the request.
+And `Set-Cookie` is appended per value rather than set, because `Headers.set` collapses
+repeats into one comma-joined string that browsers reject — and the auth flow sends two
+cookies.
 
 **A hosted auth provider** was rejected because authentication is explicitly one of the
 things being assessed. Outsourcing it would remove exactly the code we are meant to be
@@ -938,7 +953,8 @@ Ride state transitions are precisely where a typo becomes a silent bug.
 │   ├── docker-entrypoint.sh migrate → seed → exec server
 │   └── .dockerignore
 ├── frontend/                Next.js App Router
-│   ├── next.config.ts       proxies /api to the backend (same-origin cookies)
+│   ├── Dockerfile           standalone output, non-root, health-checked
+│   ├── src/app/api/         runtime proxy to the API (same-origin cookies)
 │   ├── src/middleware.ts    coarse redirects for signed-in/out sections
 │   ├── src/app/             routes
 │   ├── src/components/      ui primitives and the signed-in shell
@@ -985,16 +1001,19 @@ That is the whole setup. In order, Compose:
    check, because MySQL accepts TCP connections well before it can serve queries,
 4. applies migrations with `prisma migrate deploy`,
 5. seeds Jashim, Bullet, Nusrat, Rafiq and Shirin plus the twelve Dhaka areas,
-6. starts the API and begins health-checking `/ready`.
+6. starts the API and begins health-checking `/ready`,
+7. holds the frontend back until the API is healthy, so the first page load cannot
+   land before the database is migrated and seeded.
 
 | Service | URL |
 | --- | --- |
+| **App** | **http://localhost:3000** |
 | API | http://localhost:4000/api/v1 |
 | Health / readiness | http://localhost:4000/health · http://localhost:4000/ready |
 | MySQL | `127.0.0.1:3306` |
 
-_The frontend service joins this file in a later phase; the backend stack is
-complete._
+All three containers report a real health check, so `docker compose ps` showing
+`healthy` means the stack is genuinely serving rather than merely running.
 
 A quick check that it worked:
 
@@ -1054,19 +1073,27 @@ run first — and it asserts as it goes, so a wrong number fails rather than scr
 
 </details>
 
-### Running the frontend
+### Running the frontend in development
 
-The frontend is not in Compose yet, so run it alongside the stack:
+Compose already serves the frontend, but for hot reload:
 
 ```bash
+docker compose up -d mysql api    # backend only
 cd frontend
 npm install
-npm run dev          # http://localhost:3000
+npm run dev                       # http://localhost:3000
 ```
 
-It calls `/api/v1/...` relatively and Next proxies that to the API, so no CORS
-configuration is involved and the auth cookies are same-origin. Point it elsewhere with
-`API_PROXY_TARGET` (default `http://localhost:4000`).
+It calls `/api/v1/...` relatively and the route handler proxies that to the API, so no
+CORS configuration is involved and the auth cookies are same-origin. Point it elsewhere
+with `API_PROXY_TARGET` (default `http://localhost:4000`).
+
+The demo walkthrough can be driven through either entry point, which is a useful way to
+confirm the proxy itself is working:
+
+```bash
+API_BASE_URL=http://localhost:3000/api/v1 node backend/scripts/demo-flow.mjs
+```
 
 ### Running outside Docker
 
@@ -1389,5 +1416,5 @@ Each item is one feature branch merged into `master`.
 - [x] Docker Compose setup
 - [x] Frontend scaffold and auth screens
 - [x] Passenger UI
-- [ ] Driver UI
+- [x] Driver UI
 - [ ] Integration pass, deployment and demo video

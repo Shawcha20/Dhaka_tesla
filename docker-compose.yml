@@ -94,6 +94,27 @@ services:
     ports:
       - '${API_PORT:-4000}:4000'
 
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: dtp-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        # Waits for the API to pass its own readiness probe, so the first page load
+        # cannot land before migrations and seeding have finished.
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # Server-side only. The browser never sees this: it calls the relative
+      # /api/v1, and Next proxies that to the service name below — which is what
+      # keeps the auth cookies same-origin.
+      API_PROXY_TARGET: http://api:4000
+    ports:
+      - '${WEB_PORT:-3000}:3000'
+
 volumes:
   mysql-data:
     driver: local
