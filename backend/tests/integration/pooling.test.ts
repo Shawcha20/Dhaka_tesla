@@ -554,13 +554,19 @@ describe.skipIf(!hasDatabase)('pooling and capacity', () => {
     });
 
     it('refuses a passenger on every driver route', async () => {
-      for (const call of [
-        nusrat.agent.get('/api/v1/driver/requests'),
-        nusrat.agent.get('/api/v1/driver/pools/current'),
-        nusrat.agent.patch('/api/v1/driver/status').send({ isOnline: true }),
-        nusrat.agent.post('/api/v1/driver/pools').send({ rideRequestId: 1 }),
-      ]) {
-        const res = await call;
+      // Thunks, not eagerly-created promises. Supertest binds an ephemeral server
+      // per request, so building them all up front starts four servers at once and
+      // the later ones are already closed by the time they are awaited.
+      const calls = [
+        () => nusrat.agent.get('/api/v1/driver/requests'),
+        () => nusrat.agent.get('/api/v1/driver/pools/current'),
+        () => nusrat.agent.get('/api/v1/driver/pools'),
+        () => nusrat.agent.patch('/api/v1/driver/status').send({ isOnline: true }),
+        () => nusrat.agent.post('/api/v1/driver/pools').send({ rideRequestId: 1 }),
+      ];
+
+      for (const call of calls) {
+        const res = await call();
         expect(res.status).toBe(403);
         expect(res.body.error.code).toBe('FORBIDDEN_ROLE');
       }
