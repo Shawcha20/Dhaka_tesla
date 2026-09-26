@@ -106,10 +106,13 @@ export function AppShell({
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            {/* Wallet balance is shown wherever a passenger is, because it decides
-                whether a TeslaPay fare will settle. */}
+            {/* Wallet balance is shown wherever a passenger is, at every width,
+                because it decides whether a TeslaPay fare will settle and a phone at
+                a roadside is the case that matters. The vehicle badge below is the
+                one that folds away: the driver's own screen states it far more
+                loudly than a chip in the header could. */}
             {user.walletBalancePaisa !== null && (
-              <Badge className="bg-brand-50 text-brand-700 ring-brand-200 tabular hidden sm:inline-flex">
+              <Badge className="bg-brand-50 text-brand-700 ring-brand-200 tabular">
                 {formatTaka(user.walletBalancePaisa)}
               </Badge>
             )}
