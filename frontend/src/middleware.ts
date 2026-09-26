@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 const ACCESS_COOKIE = 'dtp_access';
 
 /** Sections that make no sense without a session. */
-const PROTECTED = ['/passenger', '/driver'];
+const PROTECTED = ['/passenger', '/driver', '/profile'];
 
 /** Sections that make no sense with one. */
 const AUTH_ONLY = ['/login', '/signup'];
