@@ -14,8 +14,13 @@ services:
     runtime: docker
     plan: free
     region: singapore # closest region to Dhaka on the free tier
-    rootDir: backend
-    dockerfilePath: ./Dockerfile
+    # Both paths are relative to the repository root, which is how Render resolves
+    # them. Setting rootDir instead leaves it ambiguous whether dockerfilePath is
+    # relative to the repo or to that directory — being explicit avoids the question.
+    # dockerContext must be backend/, because the Dockerfile's first COPY expects
+    # package.json to sit at the root of the build context.
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
 
     # Render polls this before routing traffic, and rolls a deploy back if it never
     # passes. /ready checks the database rather than merely that the process is up, so
