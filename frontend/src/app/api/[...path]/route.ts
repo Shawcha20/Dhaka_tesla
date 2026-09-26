@@ -94,6 +94,19 @@ async function proxy(request: NextRequest, path: string[]): Promise<Response> {
   });
 
   /**
+   * Set here as well as by the API, deliberately.
+   *
+   * The browser talks to this proxy, not to the API, so this is the response that
+   * actually reaches a cache. Relying on the upstream header alone means a single
+   * misconfiguration two services away silently reintroduces caching of live
+   * state — which already happened once: the driver's feed polls every few
+   * seconds, and a cached copy left a driver seeing "nobody waiting" while
+   * passengers were queued.
+   */
+  responseHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  responseHeaders.set('Pragma', 'no-cache');
+
+  /**
    * Set-Cookie needs special handling: `Headers.set` collapses repeated values into
    * one comma-joined string, which browsers reject. The auth flow sends two cookies,
    * so getting this wrong would break sign-in in a way that looks like an API bug.
