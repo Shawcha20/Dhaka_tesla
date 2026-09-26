@@ -6,8 +6,9 @@ A ride-pooling MVP: passengers request rides across Dhaka, and when their routes
 compatible they share one three-seat battery rickshaw — each paying their own
 discounted fare, without the vehicle ever being overbooked.
 
-> **Status: in development.** Sections marked _TODO_ are not implemented yet. The
-> [roadmap](#roadmap) shows exactly where things stand.
+> **Status: feature-complete MVP, deployed.** Still to come: the demo video, screenshots
+> and the AI usage write-up, each marked _TODO_ below. The [roadmap](#roadmap) shows
+> exactly where things stand.
 
 **Live app:** <https://dhaka-tesla.vercel.app> · **Live API:**
 <https://dhaka-tesla-pool-api-rzh8.onrender.com/api/v1> ·
@@ -1440,6 +1441,25 @@ is set, so one image runs unchanged locally and on Render.
 
 Reasoning about 1M passengers and 100k drivers, without building any of it now.
 
+```mermaid
+flowchart LR
+    C[Browsers / apps] --> LB[Load balancer]
+    LB --> API1[API instance]
+    LB --> API2[API instance]
+    LB --> APIn[API instance …]
+
+    API1 & API2 & APIn -->|seat claims, writes| P[(MySQL primary<br/>sharded by pickup zone)]
+    API1 & API2 & APIn -->|history, feeds| R[(Read replicas)]
+    API1 & API2 & APIn -->|areas, fare constants| K[(Cache)]
+    API1 & API2 & APIn -->|shared counters| RL[(Rate-limit store)]
+    API1 & API2 & APIn -. receipts, notifications,<br/>analytics .-> Q[[Event stream]]
+    Q -.-> W[Workers]
+    P --> R
+```
+
+Solid arrows are the synchronous path; the dotted ones are everything that leaves it.
+The seat claim is the one line that must always reach the primary.
+
 **The bottleneck is not the API, it is the hot pool row.** Every claim on one pool
 serialises on a single `UPDATE`. That is correct and must stay correct — only the
 database can actually promise a seat. So the work is to reduce contenders per row
@@ -1498,4 +1518,8 @@ Each item is one feature branch merged into `master`.
 - [x] Frontend scaffold and auth screens
 - [x] Passenger UI
 - [x] Driver UI
-- [ ] Integration pass, deployment and demo video
+- [x] Deployment: Vercel, Render and Aiven MySQL
+- [x] Integration fixes: no-store caching, the driver request feed
+- [x] Account settings for both roles; demo credentials out of the shipped UI
+- [ ] Screenshots, AI usage write-up and demo video
+- [ ] Cut `release/v1.0.0` from `pre-release`
