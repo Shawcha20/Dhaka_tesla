@@ -876,9 +876,19 @@ as CPU-hard, so it resists GPU attack better. bcrypt would be perfectly responsi
 there was no reason to prefer the older primitive.
 
 **`httpOnly` cookies over `localStorage`.** JavaScript must not be able to read a
-credential — an XSS bug should not be an account takeover. The cost is CSRF exposure,
-accepted knowingly and handled with `sameSite` plus a CORS allowlist that names exact
-origins and never wildcards.
+credential — an XSS bug should not be an account takeover.
+
+The usual cost of cookies is CSRF exposure, and deployed there is a second problem:
+Vercel and Render are different sites, so the browser would only attach cookies
+cross-site if they were marked `SameSite=None` — which removes exactly the protection
+`SameSite` exists to give, leaving the CORS allowlist as the only defence.
+
+**Both problems are solved by proxying the API through the frontend.** A Next.js
+rewrite sends `/api/*` to the backend server-side, so from the browser's point of view
+everything is same-origin: cookies stay `SameSite=Lax`, CORS never enters the picture,
+and the API's real hostname is never exposed to the client. The cost is one extra
+network hop, which is a fair price for not weakening cookie policy. See
+[`frontend/next.config.ts`](frontend/next.config.ts).
 
 **A hosted auth provider** was rejected because authentication is explicitly one of the
 things being assessed. Outsourcing it would remove exactly the code we are meant to be
@@ -922,9 +932,13 @@ Ride state transitions are precisely where a typo becomes a silent bug.
 │   ├── docker-entrypoint.sh migrate → seed → exec server
 │   └── .dockerignore
 ├── frontend/                Next.js App Router
+│   ├── next.config.ts       proxies /api to the backend (same-origin cookies)
+│   ├── src/middleware.ts    coarse redirects for signed-in/out sections
 │   ├── src/app/             routes
-│   ├── src/components/
-│   └── src/lib/             api client, hooks, formatters
+│   ├── src/components/      ui primitives and the signed-in shell
+│   ├── src/hooks/           session
+│   ├── src/providers/       TanStack Query client
+│   └── src/lib/             api client, wire types, formatters
 ├── docker/
 │   └── mysql/init/          runs once on first database boot
 ├── docker-compose.yml
@@ -1033,6 +1047,20 @@ run first — and it asserts as it goes, so a wrong number fails rather than scr
 ```
 
 </details>
+
+### Running the frontend
+
+The frontend is not in Compose yet, so run it alongside the stack:
+
+```bash
+cd frontend
+npm install
+npm run dev          # http://localhost:3000
+```
+
+It calls `/api/v1/...` relatively and Next proxies that to the API, so no CORS
+configuration is involved and the auth cookies are same-origin. Point it elsewhere with
+`API_PROXY_TARGET` (default `http://localhost:4000`).
 
 ### Running outside Docker
 
@@ -1353,7 +1381,7 @@ Each item is one feature branch merged into `master`.
 - [x] Tesla pooling, seat capacity and concurrency safety
 - [x] Driver flow and payment settlement
 - [x] Docker Compose setup
-- [ ] Frontend scaffold and auth screens
+- [x] Frontend scaffold and auth screens
 - [ ] Passenger UI
 - [ ] Driver UI
 - [ ] Integration pass, deployment and demo video
