@@ -6,6 +6,26 @@
 # around migrate: a managed database may still be waking when the container starts.
 set -eu
 
+# Checked before anything else, because a missing variable is a configuration
+# mistake rather than a transient fault. Without this the retry loop below spends
+# thirty seconds re-attempting a failure that will never succeed, and buries the
+# real cause under ten identical stack traces.
+if [ -z "${DATABASE_URL:-}" ]; then
+  echo "!!! DATABASE_URL is not set." >&2
+  echo "    The API cannot start without it. On Render, set it under" >&2
+  echo "    Environment for this service; render.yaml marks it sync: false so the" >&2
+  echo "    value is supplied there rather than committed to the repository." >&2
+  exit 1
+fi
+
+for required in JWT_ACCESS_SECRET JWT_REFRESH_SECRET; do
+  eval "value=\${$required:-}"
+  if [ -z "$value" ]; then
+    echo "!!! $required is not set. Generate one with: openssl rand -hex 32" >&2
+    exit 1
+  fi
+done
+
 echo "==> Applying migrations"
 
 # `migrate deploy` applies pending migrations and never generates or resets — the
