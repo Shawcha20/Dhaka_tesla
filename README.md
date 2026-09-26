@@ -1332,6 +1332,50 @@ infrastructure to solve a problem a container avoids for free.
 request after a quiet spell takes several seconds. That is a real consequence of not
 paying, and the alternative was spending money the brief tells us not to spend.
 
+### Deploy order
+
+The order matters: each step needs a value the previous one produces.
+
+**1. Database — [Aiven for MySQL](https://aiven.io/free-mysql-database) free tier.**
+Create a MySQL 8 service and copy its connection URI. Aiven requires TLS, so append the
+parameter Prisma expects:
+
+```
+mysql://USER:PASSWORD@HOST:PORT/defaultdb?sslaccept=strict
+```
+
+**2. Backend — [Render](https://render.com).** The repository root holds
+[`render.yaml`](render.yaml), so the service is created from a blueprint that lives in
+git rather than from dashboard clicks. Render prompts for the four values deliberately
+not committed:
+
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | the Aiven URI from step 1 |
+| `JWT_ACCESS_SECRET` | `openssl rand -hex 32` |
+| `JWT_REFRESH_SECRET` | `openssl rand -hex 32` — must differ from the above |
+| `CORS_ORIGIN` | the Vercel URL, once step 3 exists |
+
+Migrations and the seed run from the container entrypoint. Confirm with
+`curl https://YOUR-API.onrender.com/ready`, which checks the database rather than
+merely that the process started.
+
+**3. Frontend — [Vercel](https://vercel.com).** Import the repository with **Root
+Directory set to `frontend`** — not the repo root, or Vercel finds no Next.js app. One
+environment variable:
+
+| Variable | Value |
+| --- | --- |
+| `API_PROXY_TARGET` | `https://YOUR-API.onrender.com` |
+
+Nothing else is needed. The browser only ever calls the relative `/api/v1`, which the
+route handler proxies server-side. Afterwards, set `CORS_ORIGIN` on Render to the Vercel
+URL.
+
+**A note on ports.** Render injects its own `PORT`, and a service that ignores it never
+passes the health check. `config/env.ts` maps `PORT` onto `API_PORT` when only the former
+is set, so one image runs unchanged locally and on Render.
+
 ## Known limitations
 
 - **Matching is a straight-line heuristic.** Bearing knows nothing about one-way

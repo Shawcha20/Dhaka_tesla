@@ -23,6 +23,16 @@ for (const candidate of [
 
 const PLACEHOLDER = /replace_me|change_me|your_secret|changeme/i;
 
+/**
+ * Most managed hosts (Render, Fly, Heroku) inject the port to listen on as PORT and
+ * expect the process to honour it — binding to anything else means the health check
+ * never passes and the deploy is rolled back. API_PORT stays the name used locally
+ * and in compose, so it wins when both are set.
+ */
+if (!process.env['API_PORT'] && process.env['PORT']) {
+  process.env['API_PORT'] = process.env['PORT'];
+}
+
 const EnvSchema = z
   .object({
     NODE_ENV: z
