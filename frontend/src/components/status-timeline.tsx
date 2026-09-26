@@ -46,16 +46,23 @@ export function StatusTimeline({
 
           return (
             <li key={stage.status} className="flex-1">
-              <div
-                className={cx(
-                  'h-1.5 rounded-full transition-colors',
-                  cancelled && done
-                    ? 'bg-rose-300'
-                    : done
-                      ? 'bg-brand-500'
-                      : 'bg-neutral-200',
-                )}
-              />
+              {/**
+               * The fill is an inner bar scaling from the left rather than a colour
+               * swap, so when polling advances the ride a stage the rail visibly
+               * extends into it. A CSS transition does not run on mount, which is the
+               * behaviour wanted here: a ride already in progress renders its rail
+               * filled, and only the stage reached while watching animates.
+               */}
+              <div className="h-1.5 overflow-hidden rounded-full bg-neutral-200">
+                <div
+                  className={cx(
+                    'h-full origin-left rounded-full transition-transform duration-500 ease-out',
+                    cancelled ? 'bg-rose-300' : 'bg-brand-500',
+                    done ? 'scale-x-100' : 'scale-x-0',
+                  )}
+                  style={{ transitionDelay: `${index * 90}ms` }}
+                />
+              </div>
               <p
                 className={cx(
                   'mt-1.5 text-[11px] leading-tight',
@@ -79,10 +86,14 @@ export function StatusTimeline({
 
       <ol className="space-y-2.5 border-l border-neutral-200 pl-4">
         {entries.map((entry, index) => (
-          <li key={index} className="relative">
+          <li
+            key={index}
+            className="animate-rise relative"
+            style={{ animationDelay: `${index * 50}ms` }}
+          >
             <span
               className={cx(
-                'absolute -left-[21px] top-1.5 size-2 rounded-full ring-2 ring-white',
+                'absolute top-1.5 -left-[21px] size-2 rounded-full ring-2 ring-white',
                 entry.toStatus === 'CANCELLED' ? 'bg-rose-400' : 'bg-brand-400',
               )}
               aria-hidden="true"

@@ -26,19 +26,29 @@ export function SeatMeter({
         role="img"
         aria-label={`${seatsTaken} of ${capacity} seats taken`}
       >
-        {Array.from({ length: capacity }).map((_, index) => (
-          <span
-            key={index}
-            className={cx(
-              'h-6 w-4 rounded-sm ring-1 ring-inset',
-              index < seatsTaken
-                ? 'bg-brand-500 ring-brand-600'
-                : 'bg-neutral-100 ring-neutral-300',
-            )}
-          />
-        ))}
+        {Array.from({ length: capacity }).map((_, index) => {
+          const taken = index < seatsTaken;
+          return (
+            <span
+              key={index}
+              className={cx(
+                // The colour transition is what makes a seat filling read as an
+                // event. Staggering by index means three seats filling at once
+                // sweep left to right instead of flicking over together.
+                'h-6 w-4 rounded-sm ring-1 ring-inset transition-colors duration-300',
+                taken ? 'bg-brand-500 ring-brand-600' : 'bg-neutral-100 ring-neutral-300',
+              )}
+              style={{ transitionDelay: `${index * 70}ms` }}
+            />
+          );
+        })}
       </div>
-      <span className="tabular text-sm font-medium text-neutral-700">
+      <span
+        // Keyed on the count so the label pops when it changes — the number a driver
+        // is actually watching.
+        key={free}
+        className="tabular animate-pop text-sm font-medium text-neutral-700"
+      >
         {free === 0 ? 'Full' : `${free} ${free === 1 ? 'seat' : 'seats'} free`}
       </span>
     </div>

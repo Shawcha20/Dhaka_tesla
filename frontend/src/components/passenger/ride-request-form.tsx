@@ -192,7 +192,7 @@ function FareQuote({
 }) {
   if (quote.isLoading) {
     return (
-      <div className="flex items-center gap-2 rounded-lg bg-neutral-100 px-3.5 py-3 text-sm text-neutral-600">
+      <div className="animate-fade-in flex items-center gap-2 rounded-lg bg-neutral-100 px-3.5 py-3 text-sm text-neutral-600">
         <Spinner className="size-4" />
         Working out the fare…
       </div>
@@ -210,13 +210,16 @@ function FareQuote({
   const saving = soloFarePaisa - estimatedPooledFarePaisa;
 
   return (
-    <div className="bg-brand-50 ring-brand-200 space-y-3 rounded-lg p-3.5 ring-1 ring-inset">
+    <div className="bg-brand-50 ring-brand-200 animate-slide-down space-y-3 rounded-lg p-3.5 ring-1 ring-inset">
       <div className="flex items-baseline justify-between gap-3">
         <div>
           <p className="text-brand-700 text-xs font-semibold tracking-wide uppercase">
             Riding alone
           </p>
-          <p className="tabular text-xl font-bold text-neutral-900">
+          {/* Keyed on the amount so the figure pops whenever the selection changes
+              the price — otherwise a new fare appears in place of the old one with no
+              indication that anything moved. */}
+          <p key={soloFarePaisa} className="tabular animate-pop text-xl font-bold text-neutral-900">
             {formatTaka(soloFarePaisa)}
           </p>
         </div>
@@ -224,7 +227,10 @@ function FareQuote({
           <p className="text-brand-700 text-xs font-semibold tracking-wide uppercase">
             If shared
           </p>
-          <p className="tabular text-brand-700 text-xl font-bold">
+          <p
+            key={estimatedPooledFarePaisa}
+            className="tabular text-brand-700 animate-pop text-xl font-bold"
+          >
             {formatTaka(estimatedPooledFarePaisa)}
           </p>
         </div>

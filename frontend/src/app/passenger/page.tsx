@@ -6,7 +6,7 @@ import { AppShell } from '@/components/app-shell';
 import { ActiveRide } from '@/components/passenger/active-ride';
 import { RideHistory } from '@/components/passenger/ride-history';
 import { RideRequestForm } from '@/components/passenger/ride-request-form';
-import { Alert, SkeletonRows } from '@/components/ui';
+import { Alert, Reveal, SectionHeading, SkeletonRows } from '@/components/ui';
 import { useActiveRide } from '@/hooks/use-rides';
 import { useSession } from '@/hooks/use-session';
 
@@ -45,12 +45,10 @@ export default function PassengerPage() {
           ) : null}
         </section>
 
-        <section>
-          <h2 className="mb-3 text-sm font-semibold tracking-wide text-neutral-500 uppercase">
-            Past rides
-          </h2>
+        <Reveal as="section" delay={120}>
+          <SectionHeading>Past rides</SectionHeading>
           <RideHistory />
-        </section>
+        </Reveal>
       </div>
     </AppShell>
   );

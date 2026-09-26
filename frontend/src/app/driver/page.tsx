@@ -4,7 +4,14 @@ import { AppShell } from '@/components/app-shell';
 import { ActiveTrip } from '@/components/driver/active-trip';
 import { RequestBoard } from '@/components/driver/request-board';
 import { TripHistory } from '@/components/driver/trip-history';
-import { Alert, Button, Card, SkeletonRows } from '@/components/ui';
+import {
+  Alert,
+  Card,
+  Reveal,
+  SectionHeading,
+  SkeletonRows,
+  Switch,
+} from '@/components/ui';
 import { isActivePool, useCurrentPool, useVehicleStatus } from '@/hooks/use-driver';
 import { useSession } from '@/hooks/use-session';
 import { ApiError } from '@/lib/api';
@@ -37,24 +44,22 @@ export default function DriverPage() {
             Reload the page to try again.
           </Alert>
         ) : pool ? (
-          <section>
+          <Reveal as="section">
             <ActiveTrip pool={pool} />
-          </section>
+          </Reveal>
         ) : null}
 
-        <section>
-          <h2 className="mb-3 text-sm font-semibold tracking-wide text-neutral-500 uppercase">
+        <Reveal as="section" delay={60}>
+          <SectionHeading live={isOnline}>
             {pool ? 'Add another passenger' : 'Waiting for a ride'}
-          </h2>
+          </SectionHeading>
           <RequestBoard isOnline={isOnline} />
-        </section>
+        </Reveal>
 
-        <section>
-          <h2 className="mb-3 text-sm font-semibold tracking-wide text-neutral-500 uppercase">
-            Your trips
-          </h2>
+        <Reveal as="section" delay={120}>
+          <SectionHeading>Your trips</SectionHeading>
           <TripHistory />
-        </section>
+        </Reveal>
       </div>
     </AppShell>
   );
@@ -71,7 +76,15 @@ function OnlineToggle({
   const error = status.error instanceof ApiError ? status.error : null;
 
   return (
-    <Card className="flex flex-wrap items-center justify-between gap-3 py-3">
+    <Card
+      className={
+        // The card itself carries the state, so a driver can tell at a glance without
+        // reading the switch. Colour is the fastest channel there is.
+        isOnline
+          ? 'from-brand-50 ring-brand-200 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r to-white py-3 transition-colors duration-300'
+          : 'flex flex-wrap items-center justify-between gap-3 py-3 transition-colors duration-300'
+      }
+    >
       <div>
         <p className="text-sm font-medium text-neutral-900">
           {isOnline ? 'You are online' : 'You are offline'}
@@ -81,7 +94,7 @@ function OnlineToggle({
             ? 'Passengers waiting nearby are shown below.'
             : 'Go online to start accepting rides.'}
         </p>
-        {/* Explains the disabled button rather than leaving the driver to guess.
+        {/* Explains the disabled switch rather than leaving the driver to guess.
             Going offline mid-trip would leave passengers with an unresolvable ride. */}
         {isOnline && hasActiveTrip && (
           <p className="mt-0.5 text-xs text-amber-800">
@@ -90,14 +103,13 @@ function OnlineToggle({
         )}
       </div>
 
-      <Button
-        variant={isOnline ? 'secondary' : 'primary'}
-        loading={status.isPending}
+      <Switch
+        checked={isOnline}
+        pending={status.isPending}
         disabled={isOnline && hasActiveTrip}
-        onClick={() => status.mutate(!isOnline)}
-      >
-        {isOnline ? 'Go offline' : 'Go online'}
-      </Button>
+        label={isOnline ? 'Go offline' : 'Go online'}
+        onChange={(next) => status.mutate(next)}
+      />
 
       {error && (
         <div className="w-full">
