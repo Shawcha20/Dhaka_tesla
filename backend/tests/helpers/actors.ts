@@ -146,6 +146,18 @@ export function createJashim(app: Express): Promise<DriverActor> {
   });
 }
 
+/** Kamal and Toofan — the second driver, as seeded. */
+export function createKamal(app: Express): Promise<DriverActor> {
+  return createDriver(app, {
+    name: 'Kamal Hossain',
+    email: 'kamal@dhakatesla.test',
+    vehicleName: 'Toofan',
+    plateNo: 'DHA-TESLA-02',
+    capacity: 3,
+    isOnline: true,
+  });
+}
+
 export function createNusrat(app: Express): Promise<Actor> {
   return createPassenger(app, {
     name: 'Nusrat Jahan',
