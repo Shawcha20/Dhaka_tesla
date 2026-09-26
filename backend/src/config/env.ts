@@ -103,6 +103,11 @@ const EnvSchema = z
 
     POOL_MAX_BEARING_DIFF_DEG: z.coerce.number().min(0).max(180).default(45),
 
+    /* A driver who cancels this many accepted trips inside the window cannot accept
+       new ones until the oldest of those cancellations ages out of it. */
+    DRIVER_CANCEL_LIMIT: z.coerce.number().int().min(1).max(100).default(3),
+    DRIVER_CANCEL_WINDOW_HOURS: z.coerce.number().int().min(1).max(24 * 30).default(24),
+
     /** Trust N reverse proxies for client IP (rate limiting). Render sits behind one. */
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
   })
@@ -194,6 +199,10 @@ function load() {
     },
     pooling: {
       maxBearingDiffDeg: env.POOL_MAX_BEARING_DIFF_DEG,
+    },
+    driverCancellations: {
+      limit: env.DRIVER_CANCEL_LIMIT,
+      windowHours: env.DRIVER_CANCEL_WINDOW_HOURS,
     },
   } as const;
 }

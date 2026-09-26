@@ -10,6 +10,7 @@ import { kmToMilliKm } from '../../lib/money.js';
 import { prisma } from '../../lib/prisma.js';
 import { toCoordinates } from '../areas/areas.service.js';
 import { ACTIVE_POOL_STATUSES } from '../pools/pool.service.js';
+import { getCancellationStanding, type CancellationStanding } from './cancellations.js';
 import type { ListRequestsInput } from './driver.schema.js';
 
 /**
@@ -69,7 +70,11 @@ export interface DriverRequestDto {
 export async function listRelevantRequests(
   driverId: bigint,
   filters: ListRequestsInput,
-): Promise<{ pool: { id: bigint; seatsTaken: number; capacity: number } | null; data: DriverRequestDto[] }> {
+): Promise<{
+  pool: { id: bigint; seatsTaken: number; capacity: number } | null;
+  data: DriverRequestDto[];
+  standing: CancellationStanding;
+}> {
   const vehicle = await prisma.vehicle.findUnique({ where: { driverId } });
   if (!vehicle) {
     throw new AppError('VEHICLE_NOT_FOUND');
@@ -113,7 +118,13 @@ export async function listRelevantRequests(
       // moment during a concurrent accept. `none` rather than a null check,
       // because a requeued request keeps its historical membership rows — only a
       // row with leftAt: null means currently aboard.
-      poolMembers: { none: { leftAt: null } },
+      //
+      // The second branch hides requests this driver dropped by cancelling a trip:
+      // they are back in the queue for everyone else, but offering them again to
+      // the driver who just let them go invites the same cancel twice.
+      poolMembers: {
+        none: { OR: [{ leftAt: null }, { pool: { driverId, status: 'CANCELLED' } }] },
+      },
     },
     orderBy: { requestedAt: 'asc' },
     take: filters.limit,
@@ -194,5 +205,8 @@ export async function listRelevantRequests(
       ? { id: activePool.id, seatsTaken: activePool.seatsTaken, capacity: activePool.capacity }
       : null,
     data: filters.poolableOnly ? mapped.filter((r) => r.poolable.eligible) : mapped,
+    // Sent with every poll so the driver sees a warning before a suspension, not
+    // only the refusal after one.
+    standing: await getCancellationStanding(prisma, driverId),
   };
 }

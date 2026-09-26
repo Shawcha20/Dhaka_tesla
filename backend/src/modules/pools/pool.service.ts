@@ -6,6 +6,7 @@ import { initialBearingDeg } from '../../lib/geo.js';
 import { recordTransition, type DbWriter } from '../../lib/history.js';
 import { prisma } from '../../lib/prisma.js';
 import { toCoordinates } from '../areas/areas.service.js';
+import { assertMayAcceptTrips, assertNotDroppedByDriver } from '../driver/cancellations.js';
 import { recalculatePoolFares } from './pool.fares.js';
 
 /** A pool in any of these states occupies the driver; they cannot start another. */
@@ -200,7 +201,12 @@ export async function createPool(driverId: bigint, rideRequestId: bigint) {
       throw new AppError('DRIVER_HAS_ACTIVE_POOL');
     }
 
+    // Checked under the user-row lock above, so two simultaneous accepts cannot
+    // both slip past a limit that only one of them should.
+    await assertMayAcceptTrips(tx, driverId);
+
     const ride = await loadRideForMatching(tx, rideRequestId);
+    await assertNotDroppedByDriver(tx, driverId, ride.id);
 
     if (ride.seatsRequested > vehicle.capacity) {
       throw new AppError('POOL_CAPACITY_EXCEEDED', {
@@ -295,6 +301,7 @@ export async function addMemberToPool(
     }
 
     const ride = await loadRideForMatching(tx, rideRequestId);
+    await assertNotDroppedByDriver(tx, driverId, ride.id);
 
     /**
      * A pre-flight check purely for the error message.
