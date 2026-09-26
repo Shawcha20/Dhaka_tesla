@@ -2,7 +2,8 @@
 
 /**
  * Tailwind v4 configures in CSS. These tokens become utilities automatically —
- * `--color-brand-500` gives `bg-brand-500`, `text-brand-500` and so on.
+ * `--color-brand-500` gives `bg-brand-500`, `--shadow-lift` gives `shadow-lift`,
+ * `--animate-rise` gives `animate-rise`.
  *
  * The palette is deliberately small: one brand green for actions, one amber for
  * "waiting" states, one red for refusals, and a neutral ramp. A ride-pooling UI
@@ -13,10 +14,12 @@
   --color-brand-50: oklch(0.96 0.03 155);
   --color-brand-100: oklch(0.92 0.06 155);
   --color-brand-200: oklch(0.86 0.1 155);
+  --color-brand-300: oklch(0.79 0.13 155);
   --color-brand-400: oklch(0.7 0.15 155);
   --color-brand-500: oklch(0.61 0.16 155);
   --color-brand-600: oklch(0.52 0.15 155);
   --color-brand-700: oklch(0.43 0.13 155);
+  --color-brand-900: oklch(0.28 0.08 155);
 
   --color-amber-ink: oklch(0.45 0.12 70);
 
@@ -24,10 +27,113 @@
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
     Arial, sans-serif;
   --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+
+  /**
+   * Two elevations, not five. A card is either sitting on the page or lifted off
+   * it; inventing intermediate steps produces shadows nobody can tell apart. Both
+   * are tinted with the brand hue rather than pure black, which keeps a shadow from
+   * reading as grey smudge against the warm background.
+   */
+  --shadow-soft:
+    0 1px 2px oklch(0.3 0.03 155 / 0.04), 0 4px 16px oklch(0.3 0.03 155 / 0.05);
+  --shadow-lift:
+    0 2px 4px oklch(0.3 0.03 155 / 0.05), 0 14px 32px oklch(0.3 0.03 155 / 0.1);
+
+  /**
+   * Motion vocabulary.
+   *
+   * Everything entering the page uses `rise` — a short upward drift — so the app has
+   * one idea of how things arrive rather than a different flourish per component.
+   * The easing is a decelerating curve: fast at the start, settling at the end, which
+   * reads as a thing coming to rest instead of a thing being animated.
+   *
+   * `both` fill mode matters. These elements start invisible, and without it a
+   * delayed entrance would flash at full opacity before its animation began.
+   */
+  --animate-fade-in: fade-in 0.3s ease-out both;
+  --animate-rise: rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-pop: pop 0.28s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+  --animate-slide-down: slide-down 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* Live-data indicators. Slow and low-contrast on purpose: a pulse fast enough to
+     notice repeatedly is a pulse that becomes annoying within a minute. */
+  --animate-breathe: breathe 2.6s ease-in-out infinite;
+  --animate-halo: halo 2.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes pop {
+    from {
+      opacity: 0;
+      transform: scale(0.94);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes slide-down {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes breathe {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+
+  @keyframes halo {
+    0% {
+      transform: scale(1);
+      opacity: 0.55;
+    }
+    70%,
+    100% {
+      transform: scale(2.4);
+      opacity: 0;
+    }
+  }
 }
 
-/* Respects the reduced-motion preference rather than assuming everyone wants
-   transitions. */
+/**
+ * Respects the reduced-motion preference rather than assuming everyone wants
+ * movement.
+ *
+ * Durations collapse instead of `animation: none`, because these entrances use
+ * `both` fill mode to hold their start frame — removing the animation outright would
+ * leave every animated element stuck at `opacity: 0`. A near-zero duration lands on
+ * the final frame immediately, which is the honest interpretation of the preference:
+ * show me the result, skip the movement.
+ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -35,15 +141,24 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
 html {
   color-scheme: light;
+  scroll-behavior: smooth;
 }
 
 body {
   @apply bg-neutral-50 text-neutral-900 antialiased;
+  /* A single soft wash behind the content. Fixed rather than scrolling so it reads
+     as the surface the app sits on instead of an element moving past. */
+  background-image:
+    radial-gradient(60rem 30rem at 15% -10%, oklch(0.94 0.05 155 / 0.7), transparent),
+    radial-gradient(45rem 26rem at 100% 0%, oklch(0.95 0.03 230 / 0.55), transparent);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
 }
 
 /* A visible focus ring everywhere, since this app is mostly forms and buttons.

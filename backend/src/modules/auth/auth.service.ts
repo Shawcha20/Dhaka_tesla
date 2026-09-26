@@ -11,7 +11,12 @@ import {
   hashRefreshToken,
   signAccessToken,
 } from '../../lib/tokens.js';
-import type { LoginInput, RegisterInput } from './auth.schema.js';
+import type {
+  ChangePasswordInput,
+  LoginInput,
+  RegisterInput,
+  UpdateProfileInput,
+} from './auth.schema.js';
 
 export interface UserDto {
   id: bigint;
@@ -250,6 +255,75 @@ export interface MeDto extends UserDto {
     isOnline: boolean;
   } | null;
   walletBalancePaisa: bigint | null;
+}
+
+/**
+ * Updates the caller's own profile. There is no user id parameter beyond the
+ * authenticated one, so this route cannot be pointed at somebody else's account.
+ */
+export async function updateProfile(
+  userId: bigint,
+  input: UpdateProfileInput,
+): Promise<MeDto> {
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        // null clears it, undefined leaves it untouched.
+        ...(input.phone !== undefined ? { phone: input.phone } : {}),
+      },
+    });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      throw new AppError('EMAIL_ALREADY_REGISTERED', {
+        message: 'That phone number is already in use.',
+        cause: e,
+      });
+    }
+    throw e;
+  }
+
+  return getMe(userId);
+}
+
+/**
+ * Changes the password, then revokes every refresh token for the account.
+ *
+ * A password change usually means "someone else may have had access". Leaving
+ * existing sessions alive would make the change cosmetic — the whole point is to
+ * lock out whoever prompted it, which means the user signs in again everywhere,
+ * including here.
+ */
+export async function changePassword(
+  userId: bigint,
+  input: ChangePasswordInput,
+): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { passwordHash: true },
+  });
+  if (!user) {
+    throw new AppError('UNAUTHENTICATED', { message: 'Account no longer exists.' });
+  }
+
+  if (!(await verifyPassword(user.passwordHash, input.currentPassword))) {
+    // Deliberately the same code as a failed sign-in: this is a credential check,
+    // and it should not report anything a sign-in would not.
+    throw new AppError('INVALID_CREDENTIALS', {
+      message: 'Your current password is incorrect.',
+    });
+  }
+
+  const passwordHash = await hashPassword(input.newPassword);
+
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
+    prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    }),
+  ]);
 }
 
 export async function getMe(userId: bigint): Promise<MeDto> {

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 import { SeatMeter } from '@/components/driver/seat-meter';
-import { Alert, Badge, Button, Card, Field, TextInput } from '@/components/ui';
+import { Alert, Badge, Button, Card, Field, LiveDot, Reveal, TextInput } from '@/components/ui';
 import { useCancelPool, useTripAction } from '@/hooks/use-driver';
 import { ApiError } from '@/lib/api';
 import { formatKm, formatTaka, formatTime, poolStatusLabel } from '@/lib/format';
@@ -50,6 +50,7 @@ export function ActiveTrip({ pool }: { pool: PoolDetail }) {
                 : 'bg-sky-100 text-sky-900 ring-sky-200'
             }
           >
+            {pool.status === 'STARTED' && <LiveDot />}
             {poolStatusLabel(pool.status)}
           </Badge>
         </div>
@@ -60,7 +61,12 @@ export function ActiveTrip({ pool }: { pool: PoolDetail }) {
             <p className="text-xs font-semibold tracking-wide text-neutral-500 uppercase">
               This trip
             </p>
-            <p className="tabular text-xl font-bold text-neutral-900">
+            {/* Keyed on the total so it pops when a passenger joins — the figure a
+                driver is deciding on, and the one that moves without them acting. */}
+            <p
+              key={pool.totalFarePaisa}
+              className="tabular animate-pop text-xl font-bold text-neutral-900"
+            >
               {formatTaka(pool.totalFarePaisa)}
             </p>
           </div>
@@ -81,8 +87,12 @@ export function ActiveTrip({ pool }: { pool: PoolDetail }) {
         </h2>
 
         <ul className="divide-y divide-neutral-200">
-          {active.map((member) => (
-            <li key={member.rideRequestId} className="flex items-start justify-between gap-3 py-2.5">
+          {active.map((member, index) => (
+            <li
+              key={member.rideRequestId}
+              className="animate-rise flex items-start justify-between gap-3 py-2.5"
+              style={{ animationDelay: `${index * 60}ms` }}
+            >
               <div className="min-w-0">
                 <p className="font-medium text-neutral-900">{member.passenger.name}</p>
                 <p className="mt-0.5 text-sm text-neutral-600">
@@ -129,7 +139,11 @@ export function ActiveTrip({ pool }: { pool: PoolDetail }) {
         )}
       </Card>
 
-      {settlement && <SettlementSummary lines={settlement} />}
+      {settlement && (
+        <Reveal animation="pop">
+          <SettlementSummary lines={settlement} />
+        </Reveal>
+      )}
 
       <Card as="section" className="space-y-3">
         {actionError && (

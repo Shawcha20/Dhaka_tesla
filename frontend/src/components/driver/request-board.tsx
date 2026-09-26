@@ -1,6 +1,14 @@
 'use client';
 
-import { Alert, Badge, Button, Card, EmptyState, SkeletonRows } from '@/components/ui';
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Reveal,
+  SkeletonRows,
+} from '@/components/ui';
 import { useAddMember, useCreatePool, useRequestFeed, type RequestFeed } from '@/hooks/use-driver';
 import { ApiError } from '@/lib/api';
 import { formatKm, formatTaka, formatWaiting } from '@/lib/format';
@@ -25,7 +33,7 @@ export function RequestBoard({ isOnline }: { isOnline: boolean }) {
 
   if (!isOnline) {
     return (
-      <EmptyState title="You are offline">
+      <EmptyState title="You are offline" icon={<OfflineIcon />}>
         Go online to see who is waiting for a ride.
       </EmptyState>
     );
@@ -45,7 +53,7 @@ export function RequestBoard({ isOnline }: { isOnline: boolean }) {
 
   if (requests.length === 0) {
     return (
-      <EmptyState title="Nobody waiting right now">
+      <EmptyState title="Nobody waiting right now" icon={<WaitingIcon />}>
         New requests appear here automatically — no need to refresh.
       </EmptyState>
     );
@@ -58,8 +66,10 @@ export function RequestBoard({ isOnline }: { isOnline: boolean }) {
     <div className="space-y-3">
       {/* Ordered so the actionable ones are first: the driver's attention is the
           scarce resource, not screen space. */}
-      {poolable.map((request) => (
-        <RequestCard key={request.id} request={request} pool={feed.data?.pool ?? null} />
+      {poolable.map((request, index) => (
+        <Reveal key={request.id} delay={index * 60}>
+          <RequestCard request={request} pool={feed.data?.pool ?? null} />
+        </Reveal>
       ))}
 
       {rest.length > 0 && (
@@ -67,8 +77,10 @@ export function RequestBoard({ isOnline }: { isOnline: boolean }) {
           <p className="pt-2 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
             Cannot share these right now
           </p>
-          {rest.map((request) => (
-            <RequestCard key={request.id} request={request} pool={feed.data?.pool ?? null} />
+          {rest.map((request, index) => (
+            <Reveal key={request.id} delay={(poolable.length + index) * 60}>
+              <RequestCard request={request} pool={feed.data?.pool ?? null} />
+            </Reveal>
           ))}
         </>
       )}
@@ -94,11 +106,16 @@ function RequestCard({
   const hasPool = pool !== null;
 
   return (
-    <Card className={eligible ? undefined : 'opacity-70'}>
+    <Card
+      interactive={eligible}
+      className={eligible ? 'border-l-brand-400 border-l-4' : 'opacity-70'}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-medium text-neutral-900">
-            {request.pickupArea.name} → {request.dropoffArea.name}
+          <p className="flex items-center gap-1.5 font-medium text-neutral-900">
+            {request.pickupArea.name}
+            <ArrowIcon />
+            {request.dropoffArea.name}
           </p>
           <p className="mt-0.5 text-sm text-neutral-600">
             {request.passenger.name} · {request.seats}{' '}
@@ -147,7 +164,7 @@ function RequestCard({
 
         <Button
           variant={eligible ? 'primary' : 'secondary'}
-          className="px-3 py-1.5 text-xs"
+          size="sm"
           loading={pending}
           disabled={!eligible}
           onClick={() => {
@@ -174,5 +191,48 @@ function RequestCard({
         </div>
       )}
     </Card>
+  );
+}
+
+function ArrowIcon() {
+  return (
+    <svg
+      className="text-brand-500 size-3.5 shrink-0"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M2 8h12m0 0-4-4m4 4-4 4"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function WaitingIcon() {
+  return (
+    <svg className="size-8" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M12 7.5V12l3 2"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function OfflineIcon() {
+  return (
+    <svg className="size-8" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M8 8l8 8m0-8l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
   );
 }

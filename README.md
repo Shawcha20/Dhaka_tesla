@@ -1208,6 +1208,12 @@ Password is the same for every account: **`TeslaPool#2026`**
 These are seeded demo accounts in a throwaway database. No real credentials appear
 anywhere in this repository.
 
+They are documented here and **not shown in the running app**. An earlier version
+printed them on the sign-in page as clickable chips, which is convenient for a
+reviewer and wrong for anything else: a sign-in form that lists working accounts is
+a sign-in form that has stopped being one. The evaluator needs them, so they live in
+the README; the deployed UI has no idea they exist.
+
 ## Tests
 
 ```bash
@@ -1269,6 +1275,8 @@ the `x-request-id` header and the server log line, so any reported error is trac
 | | `POST /auth/refresh` | Rotate refresh token |
 | | `POST /auth/logout` | Revoke and clear |
 | | `GET /auth/me` | Current user, plus vehicle if driver |
+| | `PATCH /auth/me` | Edit own name or phone — no id in the path, so it cannot touch another account |
+| | `POST /auth/password` | Change password; revokes every session and clears the cookies |
 | **Reference** | `GET /areas` | The twelve Dhaka zones |
 | **Passenger** | `POST /rides/quote` | Fare estimate, solo and pooled |
 | | `POST /rides` | Create a ride request |

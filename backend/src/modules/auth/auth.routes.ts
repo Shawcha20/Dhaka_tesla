@@ -5,15 +5,22 @@ import {
   REFRESH_COOKIE,
   setAuthCookies,
 } from '../../lib/cookies.js';
-import { requireAuth } from '../../middleware/auth.js';
+import { requireActiveUser, requireAuth } from '../../middleware/auth.js';
 import { authLimiter } from '../../middleware/rateLimit.js';
-import { loginSchema, registerSchema } from './auth.schema.js';
 import {
+  changePasswordSchema,
+  loginSchema,
+  registerSchema,
+  updateProfileSchema,
+} from './auth.schema.js';
+import {
+  changePassword,
   getMe,
   login,
   logout,
   refresh,
   register,
+  updateProfile,
   type AuthResult,
 } from './auth.service.js';
 
@@ -83,3 +90,34 @@ authRouter.get('/me', requireAuth, async (req, res) => {
   // to express that without threading a second type through every handler.
   res.json({ data: await getMe(req.user!.id) });
 });
+
+/**
+ * Edits the caller's own profile. There is no id in the path: the only account
+ * this route can touch is the authenticated one, which makes the ownership rule
+ * structural rather than a check somebody can forget to write.
+ */
+authRouter.patch('/me', requireAuth, requireActiveUser, async (req, res) => {
+  const input = updateProfileSchema.parse(req.body);
+  res.json({ data: await updateProfile(req.user!.id, input) });
+});
+
+/**
+ * Changes the password and ends every session, this one included.
+ *
+ * The service revokes the refresh tokens; the cookies are cleared here so the
+ * browser is not left holding an access token that outlives the sessions it was
+ * issued alongside. That makes the client contract simple: on 204, sign in again.
+ */
+authRouter.post(
+  '/password',
+  authLimiter,
+  requireAuth,
+  requireActiveUser,
+  async (req, res) => {
+    const input = changePasswordSchema.parse(req.body);
+    await changePassword(req.user!.id, input);
+
+    clearAuthCookies(res);
+    res.status(204).end();
+  },
+);

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 import { StatusTimeline } from '@/components/status-timeline';
-import { Alert, Badge, Button, Card, Field, Spinner, TextInput } from '@/components/ui';
+import { Alert, Badge, Button, Card, Field, LiveDot, Reveal, Spinner, TextInput } from '@/components/ui';
 import { useCancelRide, useRide } from '@/hooks/use-rides';
 import { ApiError } from '@/lib/api';
 import { formatKm, formatTaka, rideStatusLabel, rideStatusTone } from '@/lib/format';
@@ -46,29 +46,41 @@ function RideView({ ride }: { ride: RideDetail }) {
   const cancelError = cancel.error instanceof ApiError ? cancel.error : null;
   const canCancel = CANCELLABLE.includes(ride.status);
   const pooled = ride.pool !== null && ride.pool.companions.length > 0;
+  // A ride still in motion is being polled, so the status badge earns a heartbeat.
+  const live = CANCELLABLE.includes(ride.status) || ride.status === 'STARTED';
 
   return (
     <div className="space-y-4">
-      <Card as="section" className="space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-lg font-semibold text-neutral-900">
-              {ride.pickupArea.name} → {ride.dropoffArea.name}
-            </p>
-            <p className="mt-0.5 text-sm text-neutral-500">
-              {formatKm(ride.distanceKm)} · {ride.seats} {ride.seats === 1 ? 'seat' : 'seats'} ·{' '}
-              {ride.paymentMethod === 'CASH' ? 'cash' : 'TeslaPay'}
-            </p>
+      <Reveal>
+        <Card as="section" className="space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-lg font-semibold text-neutral-900">
+                {ride.pickupArea.name} → {ride.dropoffArea.name}
+              </p>
+              <p className="mt-0.5 text-sm text-neutral-500">
+                {formatKm(ride.distanceKm)} · {ride.seats}{' '}
+                {ride.seats === 1 ? 'seat' : 'seats'} ·{' '}
+                {ride.paymentMethod === 'CASH' ? 'cash' : 'TeslaPay'}
+              </p>
+            </div>
+            <Badge className={rideStatusTone(ride.status)}>
+              {live && <LiveDot />}
+              {rideStatusLabel(ride.status)}
+            </Badge>
           </div>
-          <Badge className={rideStatusTone(ride.status)}>{rideStatusLabel(ride.status)}</Badge>
-        </div>
 
-        <FareLine ride={ride} pooled={pooled} />
+          <FareLine ride={ride} pooled={pooled} />
 
-        <StatusTimeline status={ride.status} entries={ride.timeline} />
-      </Card>
+          <StatusTimeline status={ride.status} entries={ride.timeline} />
+        </Card>
+      </Reveal>
 
-      {ride.pool && <PoolCard ride={ride} />}
+      {ride.pool && (
+        <Reveal delay={80}>
+          <PoolCard ride={ride} />
+        </Reveal>
+      )}
 
       {canCancel && (
         <Card as="section" className="space-y-3">
@@ -155,12 +167,22 @@ function FareLine({ ride, pooled }: { ride: RideDetail; pooled: boolean }) {
           <p className="text-brand-700 text-xs font-semibold tracking-wide uppercase">
             {locked ? 'Final fare' : 'Your fare'}
           </p>
-          <p className="tabular text-2xl font-bold text-neutral-900">
+          {/**
+           * Keyed on the amount so React remounts this node whenever the fare moves,
+           * which replays the pop. That is the one number on the screen that changes
+           * by itself — a passenger who joined a pool while looking elsewhere should
+           * see that something happened rather than find a different figure silently
+           * sitting there.
+           */}
+          <p
+            key={ride.currentFarePaisa}
+            className="tabular animate-pop text-2xl font-bold text-neutral-900"
+          >
             {formatTaka(ride.currentFarePaisa)}
           </p>
         </div>
         {discounted && (
-          <div className="text-right">
+          <div className="animate-fade-in text-right">
             <p className="tabular text-sm text-neutral-500 line-through">
               {formatTaka(ride.estimatedFarePaisa)}
             </p>
