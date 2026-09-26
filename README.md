@@ -9,9 +9,13 @@ discounted fare, without the vehicle ever being overbooked.
 > **Status: in development.** Sections marked _TODO_ are not implemented yet. The
 > [roadmap](#roadmap) shows exactly where things stand.
 
-**Live app:** _TODO_ · **Live API:**
+**Live app:** <https://dhaka-tesla.vercel.app> · **Live API:**
 <https://dhaka-tesla-pool-api-rzh8.onrender.com/api/v1> ·
 **Demo video:** _TODO_
+
+Sign in with any of the [demo accounts](#demo-credentials) — password
+`TeslaPool#2026`. Open **Jashim** in one browser and **Nusrat** in another to watch a
+fare drop the moment the two are pooled.
 
 > The API runs on Render's free tier, which spins a container down after inactivity, so
 > the first request may take up to a minute. Check it is awake with
