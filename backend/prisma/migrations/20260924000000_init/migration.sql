@@ -122,8 +122,9 @@ CREATE TABLE `pool_members` (
     `joined_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `left_at` DATETIME(3) NULL,
 
-    UNIQUE INDEX `pool_members_ride_request_id_key`(`ride_request_id`),
     INDEX `pool_members_pool_id_left_at_idx`(`pool_id`, `left_at`),
+    INDEX `pool_members_ride_request_id_left_at_idx`(`ride_request_id`, `left_at`),
+    UNIQUE INDEX `pool_members_pool_id_ride_request_id_key`(`pool_id`, `ride_request_id`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -202,10 +203,10 @@ ALTER TABLE `ride_requests` ADD CONSTRAINT `ride_requests_passenger_id_fkey` FOR
 ALTER TABLE `ride_requests` ADD CONSTRAINT `ride_requests_cancelled_by_fkey` FOREIGN KEY (`cancelled_by`) REFERENCES `users`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `ride_requests` ADD CONSTRAINT `ride_requests_pickup_area_id_fkey` FOREIGN KEY (`pickup_area_id`) REFERENCES `areas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `ride_requests` ADD CONSTRAINT `ride_requests_pickup_area_id_fkey` FOREIGN KEY (`pickup_area_id`) REFERENCES `areas`(`id`) ON DELETE RESTRICT ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE `ride_requests` ADD CONSTRAINT `ride_requests_dropoff_area_id_fkey` FOREIGN KEY (`dropoff_area_id`) REFERENCES `areas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `ride_requests` ADD CONSTRAINT `ride_requests_dropoff_area_id_fkey` FOREIGN KEY (`dropoff_area_id`) REFERENCES `areas`(`id`) ON DELETE RESTRICT ON UPDATE NO ACTION;
 
 -- AddForeignKey
 ALTER TABLE `pools` ADD CONSTRAINT `pools_vehicle_id_fkey` FOREIGN KEY (`vehicle_id`) REFERENCES `vehicles`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -223,10 +224,10 @@ ALTER TABLE `pool_members` ADD CONSTRAINT `pool_members_pool_id_fkey` FOREIGN KE
 ALTER TABLE `pool_members` ADD CONSTRAINT `pool_members_ride_request_id_fkey` FOREIGN KEY (`ride_request_id`) REFERENCES `ride_requests`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `ride_status_history` ADD CONSTRAINT `ride_status_history_ride_request_id_fkey` FOREIGN KEY (`ride_request_id`) REFERENCES `ride_requests`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `ride_status_history` ADD CONSTRAINT `ride_status_history_ride_request_id_fkey` FOREIGN KEY (`ride_request_id`) REFERENCES `ride_requests`(`id`) ON DELETE CASCADE ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE `ride_status_history` ADD CONSTRAINT `ride_status_history_pool_id_fkey` FOREIGN KEY (`pool_id`) REFERENCES `pools`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `ride_status_history` ADD CONSTRAINT `ride_status_history_pool_id_fkey` FOREIGN KEY (`pool_id`) REFERENCES `pools`(`id`) ON DELETE CASCADE ON UPDATE NO ACTION;
 
 -- AddForeignKey
 ALTER TABLE `ride_status_history` ADD CONSTRAINT `ride_status_history_actor_user_id_fkey` FOREIGN KEY (`actor_user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;

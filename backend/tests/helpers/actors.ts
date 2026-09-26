@@ -53,8 +53,34 @@ export async function createPassenger(
     },
   });
 
+  const opening = options.walletPaisa ?? 50_000n;
+
+  /**
+   * The wallet and its opening ledger entry are created together, exactly as the
+   * seed script does.
+   *
+   * A balance with no matching ledger row is the unauditable state the ledger
+   * exists to prevent, and a fixture that creates one is not a faithful stand-in
+   * for real data — it made the "ledger replays to balance" assertion fail against
+   * production code that was correct.
+   */
   await prisma.wallet.create({
-    data: { userId: user.id, balancePaisa: options.walletPaisa ?? 50_000n },
+    data: {
+      userId: user.id,
+      balancePaisa: opening,
+      ...(opening > 0n
+        ? {
+            transactions: {
+              create: {
+                direction: 'CREDIT',
+                amountPaisa: opening,
+                balanceAfterPaisa: opening,
+                note: 'Opening demo balance',
+              },
+            },
+          }
+        : {}),
+    },
   });
 
   return {

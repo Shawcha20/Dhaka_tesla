@@ -1,0 +1,99 @@
+# Dhaka Tesla Pool — local orchestration.
+#
+#   cp .env.example .env    # then set the secrets
+#   docker compose up --build
+#
+# Brings up MySQL, waits for it to pass a real health check, applies migrations,
+# seeds the story cast, and starts the API.
+
+name: dhaka-tesla-pool
+
+services:
+  mysql:
+    # 8.0 rather than 8.4. CHECK constraints — which this schema depends on for the
+    # overbooking guarantee — need 8.0.16 or newer, so 8.0 is sufficient, and it is
+    # the most widely deployed MySQL 8 line. The 8.4 image is built on Oracle
+    # Linux 9, whose binaries failed to exec on the development host here; 8.0
+    # avoids that class of surprise on whatever machine runs this next.
+    image: mysql:8.0
+    container_name: dtp-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    # Strict mode is stated explicitly rather than inherited. The schema leans on
+    # it: every seat and money column is UNSIGNED, and it is strict mode that turns
+    # an underflow into an error instead of a silent wrap.
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --sql-mode=STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
+    ports:
+      # Exposed so the host can run the test suite and open a mysql client.
+      - '${MYSQL_HOST_PORT:-3306}:3306'
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # Runs once, on first initialisation of an empty data directory.
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # A real query, not a port check: MySQL accepts TCP connections well before
+      # it is ready to serve, and a port check would let the API start too early.
+      test:
+        ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-uroot', '-p${MYSQL_ROOT_PASSWORD}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dtp-api
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        # The API does not start until MySQL is genuinely ready, so the entrypoint
+        # needs no wait-for-it loop.
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      API_PORT: 4000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+      # Built from the parts rather than taken from .env: inside the network the
+      # host is the service name, whereas .env points at 127.0.0.1 so the host can
+      # run the tests.
+      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
+      REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-7d}
+
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      # This stack runs NODE_ENV=production but is served over plain
+      # http://localhost, and a browser never sends a Secure cookie over http —
+      # so sign-in would silently fail with the production defaults. Both cookie
+      # switches are therefore set explicitly for local use. A real deployment
+      # over TLS leaves them unset and gets Secure + SameSite=None.
+      COOKIE_SAMESITE: lax
+      COOKIE_SECURE: 'false'
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
+
+      FARE_BASE_PAISA: ${FARE_BASE_PAISA:-2000}
+      FARE_PER_KM_PAISA: ${FARE_PER_KM_PAISA:-1500}
+      FARE_POOL_DISCOUNT_PCT: ${FARE_POOL_DISCOUNT_PCT:-20}
+      POOL_MAX_BEARING_DIFF_DEG: ${POOL_MAX_BEARING_DIFF_DEG:-45}
+
+      # Idempotent, so repeating it on restart is harmless. Off by default in the
+      # image; a real deployment should not reseed on every boot.
+      SEED_ON_START: 'true'
+    ports:
+      - '${API_PORT:-4000}:4000'
+
+volumes:
+  mysql-data:
+    driver: local

@@ -131,14 +131,16 @@ async function loadRideForMatching(
       passengerId: true,
       pickupArea: { select: { latitude: true, longitude: true } },
       dropoffArea: { select: { latitude: true, longitude: true } },
-      poolMember: { select: { id: true } },
+      // Only an active membership blocks a new one. A requeued request keeps its
+      // rows from the cancelled pool, and those must not stop it being picked up.
+      poolMembers: { where: { leftAt: null }, select: { id: true } },
     },
   });
 
   if (!ride) {
     throw new AppError('RIDE_NOT_FOUND');
   }
-  if (ride.poolMember) {
+  if (ride.poolMembers.length > 0) {
     throw new AppError('RIDE_ALREADY_MATCHED', {
       message: 'That passenger is already in a pool.',
     });

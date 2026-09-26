@@ -19,7 +19,7 @@ const app = createApp();
 
 const server = app.listen(env.API_PORT, () => {
   logger.info(
-    { port: env.API_PORT, env: env.NODE_ENV },
+    { port: env.API_PORT },
     `API listening on :${env.API_PORT}`,
   );
 });

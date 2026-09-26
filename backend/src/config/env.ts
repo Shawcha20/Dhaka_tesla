@@ -68,6 +68,20 @@ const EnvSchema = z
     COOKIE_SAMESITE: z.enum(['lax', 'strict', 'none']).optional(),
     COOKIE_DOMAIN: z.string().min(1).optional(),
 
+    /**
+     * Whether to mark auth cookies `Secure`. Defaults to true in production.
+     *
+     * Deliberately its own switch rather than being derived from NODE_ENV alone.
+     * A `Secure` cookie is never sent over plain http, and the local compose stack
+     * runs with NODE_ENV=production over http://localhost — so tying the two
+     * together silently breaks sign-in there. What actually decides this is
+     * whether the site is served over TLS, which the process cannot detect.
+     */
+    COOKIE_SECURE: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v === 'true')),
+
     /** Comma-separated. Credentials are sent, so wildcards are never allowed. */
     CORS_ORIGIN: z.string().default('http://localhost:3000'),
 
@@ -155,8 +169,7 @@ function load() {
       .filter(Boolean),
 
     cookies: {
-      // Secure is non-negotiable in production and impossible on plain http.
-      secure: env.NODE_ENV === 'production',
+      secure: env.COOKIE_SECURE ?? env.NODE_ENV === 'production',
       // Cross-site by default in production, Lax everywhere else.
       sameSite:
         env.COOKIE_SAMESITE ?? (env.NODE_ENV === 'production' ? 'none' : 'lax'),

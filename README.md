@@ -468,7 +468,7 @@ wrong:
 | --- | --- | --- |
 | Application | Atomic conditional `UPDATE`; zero affected rows means `409` | The read-then-write race |
 | Schema | `CHECK (seats_taken <= capacity)` on `pools` | A bug in any future code path, or a manual `UPDATE` |
-| Schema | `UNIQUE (ride_request_id)` on `pool_members` | A retry or double-click booking a second seat |
+| Schema | `UNIQUE (pool_id, ride_request_id)` on `pool_members` | A retry or double-click booking a second seat in the same pool |
 
 **Isolation level** is the default `REPEATABLE READ`. We do not rely on the snapshot
 for the seat check, because the conditional `UPDATE` reads current committed state
@@ -756,13 +756,19 @@ reconciliation check worth testing: `seats_taken` must always equal
 
 | Constraint / index | Reason |
 | --- | --- |
-| `UNIQUE (ride_request_id)` | A request belongs to at most one pool, ever. Stops Rafiq being seated in two Teslas, and makes a retried join fail rather than book a second seat. |
+| `UNIQUE (pool_id, ride_request_id)` | Idempotency: a retried or double-clicked join cannot book a second seat in the same pool. |
 | `INDEX (pool_id, left_at)` | The active-member list the driver sees. |
 
-There is deliberately **no** additional `UNIQUE (pool_id, ride_request_id)`. The
-global unique on `ride_request_id` is strictly stronger and already covers the
-idempotency case, so a composite unique would be a redundant index paying write
-cost on every insert for a guarantee we already have.
+**The unique is composite, not global on `ride_request_id` — and that distinction was
+a bug found by running the tests.** A global unique reads as "a request belongs to one
+pool, ever", which directly contradicts requeueing: when a driver cancels a pool its
+members return to `REQUESTED` and must be able to join a *different* Tesla. With the
+global unique in place the old membership row permanently occupied the only slot, so a
+requeued passenger could never be picked up again — the feature was silently useless.
+
+Exclusivity across pools is enforced where it actually belongs: the atomic
+`REQUESTED → MATCHED` transition, which only one claimant can win. The historical rows
+stay, so the audit trail is intact.
 
 ### `ride_status_history`
 
@@ -912,10 +918,15 @@ Ride state transitions are precisely where a typo becomes a silent bug.
 │   │   └── server.ts
 │   ├── tests/
 │   └── Dockerfile
+│   ├── Dockerfile           multi-stage, non-root, health-checked
+│   ├── docker-entrypoint.sh migrate → seed → exec server
+│   └── .dockerignore
 ├── frontend/                Next.js App Router
 │   ├── src/app/             routes
 │   ├── src/components/
 │   └── src/lib/             api client, hooks, formatters
+├── docker/
+│   └── mysql/init/          runs once on first database boot
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
@@ -938,21 +949,75 @@ straightforward to test without a database.
 ```bash
 git clone https://github.com/Shawcha20/Dhaka_tesla.git
 cd Dhaka_tesla
-cp .env.example .env        # then edit: set the secrets
+cp .env.example .env
+# Generate two DIFFERENT secrets and paste them into .env:
+openssl rand -hex 32   # JWT_ACCESS_SECRET
+openssl rand -hex 32   # JWT_REFRESH_SECRET
+
 docker compose up --build
 ```
 
-That starts MySQL, waits for it to pass a health check, applies migrations, seeds the
-story cast, and brings up both the API and the frontend.
+That is the whole setup. In order, Compose:
+
+1. starts **MySQL 8.0** with strict mode and `utf8mb4` explicitly set,
+2. creates the separate test database on first boot,
+3. holds the API back until MySQL passes a real `mysqladmin ping` — not a port
+   check, because MySQL accepts TCP connections well before it can serve queries,
+4. applies migrations with `prisma migrate deploy`,
+5. seeds Jashim, Bullet, Nusrat, Rafiq and Shirin plus the twelve Dhaka areas,
+6. starts the API and begins health-checking `/ready`.
 
 | Service | URL |
 | --- | --- |
-| Frontend | http://localhost:3000 |
 | API | http://localhost:4000/api/v1 |
-| Health / readiness | http://localhost:4000/health · `/ready` |
-| MySQL | `localhost:3306` |
+| Health / readiness | http://localhost:4000/health · http://localhost:4000/ready |
+| MySQL | `127.0.0.1:3306` |
 
-_TODO — verified once the Docker phase lands._
+_The frontend service joins this file in a later phase; the backend stack is
+complete._
+
+A quick check that it worked:
+
+```bash
+curl http://localhost:4000/ready
+curl http://localhost:4000/api/v1/areas
+```
+
+### Running outside Docker
+
+The API can run on the host against the containerised database — useful for
+debugging, and how the test suite runs.
+
+```bash
+docker compose up -d mysql        # database only
+cd backend
+npm install
+npm run prisma:generate
+npm run prisma:deploy
+npm run db:seed
+npm run dev
+```
+
+`.env` points `DATABASE_URL` at `127.0.0.1` for exactly this reason. The api
+container ignores it and builds its own URL with the hostname `mysql`, because
+inside the Compose network the service name is the host.
+
+### Notes on the image
+
+- **Multi-stage build**, so TypeScript, Vitest and ESLint never reach the runtime
+  image.
+- **Runs as the unprivileged `node` user**, not root.
+- **Debian slim rather than Alpine**: Prisma's query engine needs a musl-specific
+  build and OpenSSL wiring that is a recurring source of runtime surprises. The
+  extra tens of megabytes buy a predictable image.
+- **`exec` in the entrypoint**, so Node becomes PID 1 and receives `SIGTERM`
+  directly — without it the shell swallows the signal and the graceful shutdown
+  never runs.
+- **`migrate deploy`, never `migrate dev`**: the latter tries to create a shadow
+  database and can prompt, neither of which belongs in a non-interactive start.
+- **Seeding is opt-in** via `SEED_ON_START`, on in Compose and off by default in
+  the image. It is idempotent, so repeating it is harmless, but a real deployment
+  should not reseed on every boot.
 
 ## Environment variables
 
@@ -1024,11 +1089,22 @@ anywhere in this repository.
 
 ```bash
 cd backend
+npm run test:db:deploy    # once: applies migrations to the test database
 npm test                  # everything
 npm run test:unit         # pure logic — no database needed
 npm run test:integration  # HTTP level, needs MySQL running
 npm run test:coverage
 ```
+
+**Current status: 278 passing, 4 skipped** (the skipped four are the guards that only
+run when no database is reachable). Verified against MySQL 8.0.46 in Docker.
+
+The suite uses a **separate schema**, `dhaka_tesla_pool_test`, created automatically on
+first database boot. It truncates every table between tests, so pointing it at the
+development database would wipe the seeded demo data — `tests/setup.ts` throws rather
+than let that happen. Integration suites skip themselves with a warning when no
+database is reachable, so `npm test` still passes on a fresh clone with the unit suite
+alone.
 
 Unit tests run against no database at all, because the fare engine, the matching
 rule, the geometry and the money arithmetic are deliberately pure functions with
@@ -1225,7 +1301,7 @@ Each item is one feature branch merged into `master`.
 - [x] Ride request lifecycle and state machine
 - [x] Tesla pooling, seat capacity and concurrency safety
 - [x] Driver flow and payment settlement
-- [ ] Docker Compose setup
+- [x] Docker Compose setup
 - [ ] Frontend scaffold and auth screens
 - [ ] Passenger UI
 - [ ] Driver UI
