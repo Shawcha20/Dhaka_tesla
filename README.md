@@ -527,6 +527,32 @@ rather than the transaction snapshot — which is exactly the behaviour wanted h
 one-seat-remaining pool and asserts exactly one `201` and one `409`, plus a
 reconciliation assertion that `seats_taken` equals `SUM(seats)` over active members.
 
+### The second race: cancel against start
+
+The seat claim was not the only contested moment. Nusrat can press **Cancel** at the
+same instant Jashim presses **Start**. Both actions touch her ride row and the pool
+row, and originally both *read* first and *wrote* unconditionally — so whichever
+wrote last won. A test that fires the two together caught it on the first attempt:
+her cancel answered `200`, and her ride finished `STARTED`. She would have been told
+she had cancelled, and then been charged for the trip.
+
+Two defects, one fix:
+
+- **Opposite lock order.** The passenger side locked her ride then the pool; the
+  driver side locked the pool then the rides. That is also a deadlock waiting to
+  happen. Now **everything that changes who is aboard a trip locks the pool row
+  first** (`lib/locks.ts`) — cancel, arrive, start, complete, driver-cancel — so any
+  two of them queue instead of interleaving.
+- **Stale snapshots.** Under `REPEATABLE READ`, a transaction that waited for that lock
+  still reads from a snapshot taken before the change it waited for — the driver
+  would acquire the pool and still see Nusrat aboard. Those transactions run at
+  `READ COMMITTED`, so a read after the lock sees what actually committed.
+
+Ride-status writes are also conditional on the status just read, so if the rule is
+ever broken the write fails loudly rather than overwriting someone. The test runs the
+race twelve times; both outcomes occur, and in every round her status, her seat, her
+locked fare and whether she is charged all agree.
+
 **At larger scale** the hot row becomes the contention point: every claim on one pool
 serialises on it. That is correct, but it caps throughput per pool. We would keep the
 invariant in the database — it is the only place that can actually guarantee it — and
@@ -1467,6 +1493,44 @@ is set, so one image runs unchanged locally and on Render.
 - **Status updates are polled**, so there is a few seconds of latency.
 - **Free-tier cold starts** on the backend after idle periods.
 - **Payment is simulated.** No gateway, as the brief allows.
+
+### Gaps the brief leaves open
+
+Found by walking the product as its users would, not by the spec. Each is a real
+problem for the next engineer; each needs a product decision before code, which is
+why they are listed rather than silently guessed at.
+
+- **A trip that is never completed strands its passengers.** A `STARTED` ride cannot
+  be cancelled (the fare is locked, the passenger is aboard) and still counts as the
+  passenger's one active ride. If a driver starts a trip and then vanishes — dead
+  phone, closed app — that passenger can never book again. Needs an operations
+  role or an automatic timeout that closes trips left `STARTED` far longer than any
+  Dhaka journey.
+- **Waiting requests never expire.** A `REQUESTED` ride stays on every driver's board
+  until someone takes it or the passenger cancels, so abandoned requests accumulate.
+  A request older than, say, 30 minutes should lapse and tell the passenger.
+- **A request that every driver has dropped is invisible to all of them.** The
+  "don't re-offer to the driver who cancelled" rule is right per driver, but if all
+  three drivers each drop Nusrat, she waits with no driver able to see her and no
+  message saying so. The expiry above would also answer this.
+- **Nobody can add money to a TeslaPay wallet.** Seeded wallets have a balance; a new
+  signup's wallet starts at 0.00 and there is no top-up, so TeslaPay always fails for
+  them. The request form warns before it happens. A real top-up needs a gateway.
+- **A failed payment is never closed.** When a wallet is short the driver is told to
+  collect cash, but there is no way to record that they did, so the payment stays
+  `FAILED` and the driver's earnings under-count it.
+- **Four seats can be requested, but every vehicle has three.** The schema allows up to
+  4 so a larger vehicle could be added later; with today's fleet a 4-seat request
+  can never be accepted. It should be validated against the largest vehicle actually
+  registered.
+- **Passengers have no cancellation limit.** Drivers do; see
+  [When a driver cancels](#when-a-driver-cancels).
+- **Changing a password signs out other devices within 15 minutes, not instantly.**
+  Their refresh tokens are revoked at once, but an access token already issued stays
+  valid until it expires — the standard trade-off of stateless JWTs.
+- **Expired refresh tokens are never deleted.** Harmless for correctness (they are
+  rejected), but the table grows forever; a periodic cleanup belongs with the
+  timeout job above.
 
 ## Next improvements
 
