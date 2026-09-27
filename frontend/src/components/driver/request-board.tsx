@@ -157,7 +157,10 @@ function RequestCard({
               </Badge>
             ) : (
               <Badge className="bg-brand-50 text-brand-700 ring-brand-200">
-                Same direction
+                {/* With no trip open there is no route to compare against, so
+                    "same direction" would be a claim about nothing. Say what
+                    accepting actually does instead. */}
+                {hasPool ? 'Same direction' : 'Starts a new trip'}
               </Badge>
             )
           ) : (
