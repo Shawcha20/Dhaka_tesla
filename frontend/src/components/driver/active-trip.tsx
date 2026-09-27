@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 import { SeatMeter } from '@/components/driver/seat-meter';
-import { Alert, Badge, Button, Card, Field, LiveDot, Reveal, TextInput } from '@/components/ui';
+import { Alert, Badge, Button, Card, Field, LiveDot, TextInput } from '@/components/ui';
 import { useCancelPool, useTripAction, type CancellationStanding } from '@/hooks/use-driver';
 import { ApiError } from '@/lib/api';
 import { formatKm, formatTaka, formatTime, poolStatusLabel } from '@/lib/format';
@@ -19,16 +19,23 @@ const NEXT_ACTION = {
 export function ActiveTrip({
   pool,
   standing,
+  onCompleted,
 }: {
   pool: PoolDetail;
   standing: CancellationStanding | null;
+  /**
+   * Receives the settlement when the trip completes. Handed up rather than kept
+   * here, because completing the trip is exactly what unmounts this panel: state
+   * held in it would vanish in the same render it was set, and the driver would
+   * never learn a TeslaPay payment failed.
+   */
+  onCompleted: (settlement: SettlementLine[]) => void;
 }) {
   const tripAction = useTripAction();
   const cancelPool = useCancelPool();
 
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [reason, setReason] = useState('');
-  const [settlement, setSettlement] = useState<SettlementLine[] | null>(null);
 
   const next = NEXT_ACTION[pool.status as keyof typeof NEXT_ACTION] ?? null;
   const actionError = tripAction.error instanceof ApiError ? tripAction.error : null;
@@ -145,12 +152,6 @@ export function ActiveTrip({
         )}
       </Card>
 
-      {settlement && (
-        <Reveal animation="pop">
-          <SettlementSummary lines={settlement} />
-        </Reveal>
-      )}
-
       <Card as="section" className="space-y-3">
         {actionError && (
           <Alert tone="error">
@@ -170,7 +171,7 @@ export function ActiveTrip({
                   { poolId: pool.id, action: next.action },
                   {
                     onSuccess: ({ meta }) => {
-                      if (meta.settlement.length > 0) setSettlement(meta.settlement);
+                      if (meta.settlement.length > 0) onCompleted(meta.settlement);
                     },
                   },
                 )
@@ -243,7 +244,13 @@ export function ActiveTrip({
  * been delivered — so the driver needs to be told plainly who still owes them cash.
  * Silently marking it FAILED in the database would leave them out of pocket.
  */
-function SettlementSummary({ lines }: { lines: SettlementLine[] }) {
+export function SettlementSummary({
+  lines,
+  onDismiss,
+}: {
+  lines: SettlementLine[];
+  onDismiss: () => void;
+}) {
   const failed = lines.filter((line) => line.status === 'FAILED');
   const total = lines
     .filter((line) => line.status === 'PAID')
@@ -251,7 +258,12 @@ function SettlementSummary({ lines }: { lines: SettlementLine[] }) {
 
   return (
     <Card as="section" className="space-y-3">
-      <h2 className="text-base font-semibold text-neutral-900">Trip complete</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-base font-semibold text-neutral-900">Trip complete</h2>
+        <Button variant="ghost" size="sm" onClick={onDismiss}>
+          Dismiss
+        </Button>
+      </div>
 
       <ul className="divide-y divide-neutral-200">
         {lines.map((line) => (
