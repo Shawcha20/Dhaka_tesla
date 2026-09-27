@@ -116,27 +116,37 @@ export function AppShell({
                 {formatTaka(user.walletBalancePaisa)}
               </Badge>
             )}
+            {/**
+             * Hidden on phones by a wrapper, not by adding `hidden` to the
+             * component: Badge and Button already carry `inline-flex`, and two
+             * display utilities on one element resolve by stylesheet order rather
+             * than by intent — so `hidden` silently lost and both stayed visible.
+             */}
             {user.vehicle && (
-              <Badge
-                className={
-                  user.vehicle.isOnline
-                    ? 'bg-brand-50 text-brand-700 ring-brand-200 hidden sm:inline-flex'
-                    : 'hidden bg-neutral-100 text-neutral-600 ring-neutral-200 sm:inline-flex'
-                }
-              >
-                {user.vehicle.name} · {user.vehicle.isOnline ? 'online' : 'offline'}
-              </Badge>
+              <span className="hidden sm:contents">
+                <Badge
+                  className={
+                    user.vehicle.isOnline
+                      ? 'bg-brand-50 text-brand-700 ring-brand-200'
+                      : 'bg-neutral-100 text-neutral-600 ring-neutral-200'
+                  }
+                >
+                  {user.vehicle.name} · {user.vehicle.isOnline ? 'online' : 'offline'}
+                </Badge>
+              </span>
             )}
 
-            <Button
-              variant="ghost"
-              size="sm"
-              className="hidden sm:inline-flex"
-              loading={logout.isPending}
-              onClick={() => logout.mutate()}
-            >
-              Sign out
-            </Button>
+            {/* On phones, sign out lives on the account page behind the avatar. */}
+            <span className="hidden sm:contents">
+              <Button
+                variant="ghost"
+                size="sm"
+                loading={logout.isPending}
+                onClick={() => logout.mutate()}
+              >
+                Sign out
+              </Button>
+            </span>
 
             {/* The avatar is the way into account settings, which is where the
                 signed-in name, phone and password live. */}
