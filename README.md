@@ -6,8 +6,8 @@ A ride-pooling MVP: passengers request rides across Dhaka, and when their routes
 compatible they share one three-seat battery rickshaw — each paying their own
 discounted fare, without the vehicle ever being overbooked.
 
-> **Status: feature-complete MVP, deployed.** Still to come: the demo video, screenshots
-> and the AI usage write-up, each marked _TODO_ below. The [roadmap](#roadmap) shows
+> **Status: feature-complete MVP, deployed.** Still to come: the demo video and
+> screenshots, each marked _TODO_ below. The [roadmap](#roadmap) shows
 > exactly where things stand.
 
 **Live app:** <https://dhaka-tesla.vercel.app> · **Live API:**
@@ -106,8 +106,8 @@ Everything in this design serves those three constraints.
 
 ## Screenshots
 
-_TODO — passenger request form with the live fare quote, the ride tracker mid-pool, and
-the driver's request board. Captured once the driver UI lands._
+_TODO — the passenger request form with its live fare quote, the driver's request
+board, the pooled trip from both sides, the settlement summary, and a ride receipt._
 
 ## Architecture
 
@@ -1541,8 +1541,54 @@ strand anyone mid-trip.
 
 ## AI usage
 
-_TODO — to be completed with real examples, per the brief's requirement: tools used,
-what for, one suggestion accepted, one rejected or changed and why._
+**Tools.** Claude Code (Anthropic's Claude, in VS Code) was my main assistant for
+this project: planning the phases, writing and reviewing code, writing tests, the
+Docker and deployment configuration, and drafting this README. Vercel's and Render's
+own documentation for the deployment details.
+
+**How I used it.** I set the constraints first — MySQL, Express, Next.js, integer
+paisa, the story cast, no Redis or queues — and worked phase by phase: backend
+before frontend, one feature branch per feature, every commit mine to review before
+it landed. I treated its output as a proposal. Anything touching money, seat
+capacity or auth, I read line by line and asked it to prove with a test.
+
+**A suggestion I accepted: claiming seats with one conditional `UPDATE`.**
+For the Nusrat-and-Shirin race, the suggestion was not "read the free seats, then
+write", but a single statement:
+
+```sql
+UPDATE pools SET seats_taken = seats_taken + ?
+WHERE id = ? AND seats_taken + ? <= capacity
+```
+
+If it updates zero rows, the seat is gone. I accepted it because the check and the
+write are one atomic step, so two requests cannot both see "one seat left" and both
+take it — and the statement also takes the row lock that serialises everything
+after it in the transaction. I kept a database `CHECK (seats_taken <= capacity)` as
+a second line of defence, and a test fires five simultaneous claims at one seat to
+prove exactly one wins.
+
+**A suggestion I rejected: demo credentials on the sign-in page.** The first
+version of the login screen listed the four demo accounts as clickable chips, and
+the landing page printed the shared password. Convenient for a reviewer, but I
+asked for it to be removed: a production sign-in form that lists working accounts
+has stopped being a sign-in form. The credentials live in this README instead.
+
+**Where it was wrong, and what I changed.** When the driver's board showed
+"Nobody waiting" while passengers were queued, the first diagnosis was browser
+caching of the polled feed. That was a real problem and got fixed, but it was not
+*the* problem — I tested again, and the board was still empty. The actual bug was in
+the frontend's API client: the feed returns `{ pool, data }`, the client unwrapped it
+to the bare array, and the board then read `.data` off an array. The earlier checks
+had used `curl`, which reads the raw body and never exercises that unwrapping. The
+lesson I took: verify through the code path the user actually runs, not a
+convenient substitute. The fix was then proven by running the real client module
+against the live API — zero requests before, four after.
+
+**What I own.** I can walk through any part of this: the schema and its `CHECK`
+constraints, the two-level ride/pool state machine, how pooling re-prices fares, the
+seat-claim transaction, the JWT and refresh-token rotation, and why each technology
+was chosen over its alternatives.
 
 ## Roadmap
 
@@ -1564,5 +1610,6 @@ Each item is one feature branch merged into `master`.
 - [x] Deployment: Vercel, Render and Aiven MySQL
 - [x] Integration fixes: no-store caching, the driver request feed
 - [x] Account settings for both roles; demo credentials out of the shipped UI
-- [ ] Screenshots, AI usage write-up and demo video
+- [x] AI usage write-up
+- [ ] Screenshots and demo video
 - [ ] Cut `release/v1.0.0` from `pre-release`
