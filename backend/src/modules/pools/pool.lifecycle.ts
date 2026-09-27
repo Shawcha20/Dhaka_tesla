@@ -2,6 +2,7 @@ import type { PoolStatus, RideStatus } from '../../domain/status.js';
 import { assertPoolTransition, assertRideTransition, requeueStatusFor } from '../../domain/transitions.js';
 import { AppError } from '../../lib/errors.js';
 import { recordTransition, type DbWriter } from '../../lib/history.js';
+import { lockPool, MEMBERSHIP_TRANSACTION } from '../../lib/locks.js';
 import { prisma } from '../../lib/prisma.js';
 import { lockPoolFares } from './pool.fares.js';
 import { createPendingPayments, settlePoolPayments, type SettlementLine } from './pool.payments.js';
@@ -28,6 +29,10 @@ async function loadOwnedPool(
   poolId: bigint,
   driverId: bigint,
 ): Promise<PoolRow> {
+  // Lock before reading, so the membership read below is what we act on. See
+  // lib/locks.ts. An id that is not this driver's locks one row and reads as absent.
+  await lockPool(db, poolId);
+
   const pool = await db.pool.findFirst({
     // Ownership in the WHERE: another driver's pool reads as absent, so the API
     // never confirms that someone else's pool id exists.
@@ -82,10 +87,18 @@ async function advanceMembers(
   for (const member of pool.members) {
     assertRideTransition(member.rideStatus, to, 'DRIVER');
 
-    await db.rideRequest.update({
-      where: { id: member.rideRequestId },
+    // Conditional on the status just read, as a guard: under the pool lock it
+    // cannot have moved, and if that ever stops being true this fails loudly
+    // instead of silently overwriting a passenger's cancellation.
+    const { count } = await db.rideRequest.updateMany({
+      where: { id: member.rideRequestId, status: member.rideStatus },
       data: { status: to, [timestampField]: now },
     });
+    if (count !== 1) {
+      throw new AppError('INVALID_STATE_TRANSITION', {
+        message: 'A passenger changed their ride at the same moment. Try again.',
+      });
+    }
 
     await recordTransition(db, {
       rideRequestId: member.rideRequestId,
@@ -124,7 +137,7 @@ export async function markArrived(driverId: bigint, poolId: bigint) {
       actorRole: 'DRIVER',
       note: 'Driver reached the pickup area',
     });
-  });
+  }, MEMBERSHIP_TRANSACTION);
 
   return getPoolForDriver(poolId, driverId);
 }
@@ -169,7 +182,7 @@ export async function startTrip(driverId: bigint, poolId: bigint) {
       actorRole: 'DRIVER',
       note: `Trip started with ${pool.members.length} passenger(s); fares locked`,
     });
-  });
+  }, MEMBERSHIP_TRANSACTION);
 
   return getPoolForDriver(poolId, driverId);
 }
@@ -217,7 +230,7 @@ export async function completeTrip(
     });
 
     return lines;
-  });
+  }, MEMBERSHIP_TRANSACTION);
 
   return { pool: await getPoolForDriver(poolId, driverId), settlement };
 }
@@ -289,7 +302,7 @@ export async function cancelPool(
       actorRole: 'DRIVER',
       ...(reason ? { note: reason } : {}),
     });
-  });
+  }, MEMBERSHIP_TRANSACTION);
 
   return getPoolForDriver(poolId, driverId);
 }

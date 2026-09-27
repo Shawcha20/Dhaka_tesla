@@ -9,6 +9,7 @@ import { AppError } from '../../lib/errors.js';
 import { calculateFare } from '../../lib/fare.js';
 import { distanceMilliKm } from '../../lib/geo.js';
 import { recordTransition } from '../../lib/history.js';
+import { lockPool, MEMBERSHIP_TRANSACTION } from '../../lib/locks.js';
 import { milliKmToKm } from '../../lib/money.js';
 import { prisma } from '../../lib/prisma.js';
 import { loadRoute, toCoordinates } from '../areas/areas.service.js';
@@ -320,19 +321,40 @@ export async function cancelRide(
   reason: string | undefined,
 ) {
   await prisma.$transaction(async (tx) => {
-    const ride = await tx.rideRequest.findFirst({
-      where: { id: rideId, passengerId },
-      select: {
-        id: true,
-        status: true,
-        // Only an active membership needs its seat released.
-        poolMembers: {
-          where: { leftAt: null },
-          take: 1,
-          select: { id: true, seats: true, poolId: true, leftAt: true },
+    const loadRide = () =>
+      tx.rideRequest.findFirst({
+        where: { id: rideId, passengerId },
+        select: {
+          id: true,
+          status: true,
+          // Only an active membership needs its seat released.
+          poolMembers: {
+            where: { leftAt: null },
+            take: 1,
+            select: { id: true, seats: true, poolId: true, leftAt: true },
+          },
         },
-      },
-    });
+      });
+
+    /**
+     * Lock the trip this ride is aboard before reading anything we act on — the
+     * same order the driver's controls use (lib/locks.ts), so a cancel racing a
+     * start queues behind it instead of overwriting it.
+     *
+     * Looped because the answer can change between the unlocked look-up and the
+     * lock: a driver may accept the ride in that gap. Each pass locks whichever
+     * trip the ride is on now, until the ride is on the trip we hold. Two passes
+     * cover it in practice; the bound is only there so a bug cannot spin forever.
+     */
+    let lockedPoolId: bigint | null = null;
+    let ride = await loadRide();
+    for (let pass = 0; pass < 3; pass += 1) {
+      const poolId = ride?.poolMembers[0]?.poolId ?? null;
+      if (poolId === null || poolId === lockedPoolId) break;
+      await lockPool(tx, poolId);
+      lockedPoolId = poolId;
+      ride = await loadRide();
+    }
 
     if (!ride) {
       throw new AppError('RIDE_NOT_FOUND');
@@ -358,8 +380,11 @@ export async function cancelRide(
 
     const now = new Date();
 
-    await tx.rideRequest.update({
-      where: { id: ride.id },
+    // Conditional on the status just checked. A REQUESTED ride has no pool to
+    // lock, so a driver accepting it at this instant is settled here instead: the
+    // row lock lets exactly one of the two through.
+    const { count } = await tx.rideRequest.updateMany({
+      where: { id: ride.id, status: ride.status },
       data: {
         status: 'CANCELLED',
         cancelledAt: now,
@@ -367,6 +392,11 @@ export async function cancelRide(
         ...(reason ? { cancelReason: reason } : {}),
       },
     });
+    if (count !== 1) {
+      throw new AppError('RIDE_NOT_CANCELLABLE', {
+        message: 'Your ride changed just now. Refresh to see where it stands.',
+      });
+    }
 
     const member = ride.poolMembers[0];
     if (member && !member.leftAt) {
@@ -406,7 +436,7 @@ export async function cancelRide(
       actorRole: 'PASSENGER',
       ...(reason ? { note: reason } : {}),
     });
-  });
+  }, MEMBERSHIP_TRANSACTION);
 
   return getRideForPassenger(rideId, passengerId);
 }
