@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
+
 import { AppShell } from '@/components/app-shell';
-import { ActiveTrip } from '@/components/driver/active-trip';
+import { ActiveTrip, SettlementSummary } from '@/components/driver/active-trip';
 import { RequestBoard } from '@/components/driver/request-board';
 import { TripHistory } from '@/components/driver/trip-history';
 import {
@@ -22,6 +24,7 @@ import {
 import { useSession } from '@/hooks/use-session';
 import { ApiError } from '@/lib/api';
 import { formatTime } from '@/lib/format';
+import type { SettlementLine } from '@/lib/types';
 
 /**
  * The driver's working screen.
@@ -41,6 +44,9 @@ export default function DriverPage() {
   // a second request. Read here because the standing matters above the board too.
   const standing = useRequestFeed({ enabled: isOnline }).data?.standing ?? null;
 
+  // Held here, not in the trip panel: completing a trip unmounts that panel.
+  const [settlement, setSettlement] = useState<SettlementLine[] | null>(null);
+
   return (
     <AppShell
       role="DRIVER"
@@ -58,9 +64,15 @@ export default function DriverPage() {
           </Alert>
         ) : pool ? (
           <Reveal as="section">
-            <ActiveTrip pool={pool} standing={standing} />
+            <ActiveTrip pool={pool} standing={standing} onCompleted={setSettlement} />
           </Reveal>
         ) : null}
+
+        {settlement && (
+          <Reveal as="section" animation="pop">
+            <SettlementSummary lines={settlement} onDismiss={() => setSettlement(null)} />
+          </Reveal>
+        )}
 
         <Reveal as="section" delay={60}>
           <SectionHeading live={isOnline}>
