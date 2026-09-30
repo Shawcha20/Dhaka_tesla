@@ -916,6 +916,8 @@ Mandated by the brief: Next.js/React frontend, Node.js backend. Chosen here: MyS
 | Logging | **Pino** + request IDs | Winston, console | Structured JSON, low overhead, and every error response carries a `requestId` that matches a log line. |
 | Frontend | **Next.js 15** App Router + Tailwind + TanStack Query | CRA/Vite, CSS Modules, MUI, SWR | Query handles polling, caching and loading/error states, which is most of this UI's behaviour. |
 | Styling | **Tailwind** | CSS Modules, MUI, shadcn/ui | Consistent spacing and colour, no runtime cost. A component library would be heavier than the app. |
+| Database | **MySQL 8** | PostgreSQL, SQLite | Enforces `CHECK` constraints (8.0.16+) and InnoDB row locks, which is what the seat invariant rests on. Relational, because rides, pools and memberships are joined data with integrity rules. |
+| Hosting | **Vercel** (web), **Render** (API, Docker), **Aiven** (MySQL) | Netlify, Fly.io, Railway, TiDB Serverless, self-hosted VPS | All free tier, as the brief requires. Vercel builds Next.js natively; Render runs the same Docker image as local Compose; Aiven, because Render's free database is PostgreSQL only. |
 
 <details>
 <summary><b>The reasoning in full, with switch-triggers</b></summary>
@@ -1000,6 +1002,37 @@ then SSE first, being one-directional and simpler.
 mistakes: the status unions (a transition function cannot be handed a status that does
 not exist), the paisa money type, and the DTOs shared in shape between API and forms.
 Ride state transitions are precisely where a typo becomes a silent bug.
+
+**MySQL over PostgreSQL — and when PostgreSQL would win.** Both would serve this MVP;
+the decisive requirements were `CHECK` constraints and row-level locking, which MySQL 8
+has. SQLite was ruled out, because it serialises all writers, so it cannot even
+exhibit the Nusrat-and-Shirin race, let alone prove it handled. PostgreSQL is the
+stronger database in two ways this project already brushes against. First, **partial
+unique indexes**: "one active ride per passenger" could be a single declarative
+`UNIQUE (passenger_id) WHERE status IN (...)`, where in MySQL it is enforced in code
+by locking the passenger's row. Second, **PostGIS**, for real geospatial matching.
+*Switch when:* pickups become arbitrary coordinates rather than twelve zones, or
+invariants start needing partial indexes.
+
+**Hosting.** Every piece is free tier, and each was picked for fit rather than
+familiarity. Vercel builds Next.js without configuration. Render runs the backend
+from the same `Dockerfile` that `docker compose up` uses locally, so what is tested
+is what ships — its free tier sleeps after inactivity, which is the cold start noted
+under known limitations. MySQL lives on Aiven because Render's free database is
+PostgreSQL only. *Switch when:* cold starts matter to real users — an always-on
+instance on the same platform, no architectural change needed.
+
+**The rest, briefly, with their switch triggers.**
+- **Zod** — *switch when* the API needs a published contract (OpenAPI) for outside
+  clients; generate it from these schemas rather than replacing them.
+- **Vitest** — *switch when* never, likely; its only rival here is Jest, and nothing
+  in this codebase needs what Jest has and Vitest lacks.
+- **Pino** — *switch when* the service joins a system that traces requests across
+  services; add OpenTelemetry alongside it rather than instead of it.
+- **TanStack Query** — *switch when* polling gives way to server-sent events; the
+  cache stays, and the event stream updates it.
+- **Tailwind** — *switch when* several teams share one design system; build a
+  component library on top of these tokens.
 
 </details>
 
