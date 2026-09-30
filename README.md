@@ -1662,16 +1662,34 @@ strand anyone mid-trip.
 
 ## AI usage
 
-**Tools.** Claude Code (Anthropic's Claude, in VS Code) was my main assistant for
-this project: planning the phases, writing and reviewing code, writing tests, the
-Docker and deployment configuration, and drafting this README. Vercel's and Render's
-own documentation for the deployment details.
+**Tools.** Claude Code (Anthropic's Claude, in VS Code) was my main tool. It wrote
+most of the code, the tests, the Docker and deployment configuration, and drafts of
+this README. I used Vercel's, Render's and Aiven's own documentation and dashboards
+for the deployment.
 
-**How I used it.** I set the constraints first — MySQL, Express, Next.js, integer
-paisa, the story cast, no Redis or queues — and worked phase by phase: backend
-before frontend, one feature branch per feature, every commit mine to review before
-it landed. I treated its output as a proposal. Anything touching money, seat
-capacity or auth, I read line by line and asked it to prove with a test.
+**How the work was split.** I directed; the AI implemented. My part:
+
+- **The constraints and decisions.** I chose the stack (MySQL, Node.js, Next.js,
+  Docker, free-tier hosting only), set the order (backend fully before frontend),
+  the repository shape (`frontend/`, `backend/` and this README), and the git
+  workflow — feature branches, reviewed merges, my name on every commit.
+- **The deployment.** I set up and configured Vercel, Render and the Aiven MySQL
+  database myself, supplied the environment settings, and debugged the failed
+  deploys from their logs, including the day Aiven powered the database off.
+- **Testing it as a user, and finding what the tests missed.** I ran the app with a
+  driver and passengers in separate browsers and reported what was wrong. Those
+  reports became fixes: the driver board showing nobody while passengers waited;
+  a cancelled ride reappearing for the driver who cancelled it; a requeued
+  passenger still shown the driver who had dropped them; four seats bookable in a
+  three-seat Tesla.
+- **Product requirements the brief did not state.** I asked for account settings
+  for both roles, for demo credentials to come out of the shipped UI, for more than
+  one demo driver, for a ride one driver cancels to stay open to the others, and
+  for a limit on how often a driver may cancel.
+
+I treated the AI's output as a proposal, and the parts that decide correctness —
+money, seat capacity, the state machines, auth — are the ones I made it prove with
+tests and that I can explain line by line.
 
 **A suggestion I accepted: claiming seats with one conditional `UPDATE`.**
 For the Nusrat-and-Shirin race, the suggestion was not "read the free seats, then
@@ -1690,10 +1708,10 @@ a second line of defence, and a test fires five simultaneous claims at one seat 
 prove exactly one wins.
 
 **A suggestion I rejected: demo credentials on the sign-in page.** The first
-version of the login screen listed the four demo accounts as clickable chips, and
-the landing page printed the shared password. Convenient for a reviewer, but I
-asked for it to be removed: a production sign-in form that lists working accounts
-has stopped being a sign-in form. The credentials live in this README instead.
+version of the login screen listed the demo accounts as clickable chips, and the
+landing page printed the shared password. Convenient for a reviewer, but I had it
+removed: a production sign-in form that lists working accounts has stopped being a
+sign-in form. The credentials live in this README instead, at the top.
 
 **Where it was wrong, and what I changed.** When the driver's board showed
 "Nobody waiting" while passengers were queued, the first diagnosis was browser
