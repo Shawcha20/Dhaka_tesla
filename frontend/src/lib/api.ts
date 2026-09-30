@@ -1,9 +1,10 @@
 /**
  * The API client.
  *
- * Relative by default (`/api/v1`), because requests go through the Next.js rewrite
- * in next.config.ts rather than straight to the backend. That keeps everything
- * same-origin, so cookies stay SameSite=Lax and CORS never enters the picture.
+ * Relative by default (`/api/v1`), because requests go through the runtime proxy in
+ * app/api/[...path]/route.ts rather than straight to the backend. That keeps
+ * everything same-origin, so cookies stay SameSite=Lax and CORS never enters the
+ * picture.
  */
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
 
