@@ -1041,39 +1041,45 @@ instance on the same platform, no architectural change needed.
 ```
 .
 ├── backend/                 Node.js + Express + TypeScript API
-│   ├── prisma/              schema, migrations, seed
+│   ├── prisma/              schema, migrations (+ hand-written CHECKs), seed
+│   ├── scripts/             demo-flow.mjs — the Banani story, end to end
 │   ├── src/
-│   │   ├── config/          env parsing and validation
-│   │   ├── middleware/      auth, request id, errors, rate limit
-│   │   ├── modules/         auth, rides, pools, driver, areas
-│   │   │   └── <module>/    routes, controller, service, schema
-│   │   ├── lib/             fare engine, geo, state machine, money
-│   │   └── server.ts
+│   │   ├── config/          env parsing and fail-fast validation
+│   │   ├── domain/          status unions, state machines, matching rule
+│   │   ├── lib/             fare engine, money, geo, tokens, locks, audit history
+│   │   ├── middleware/      auth, request id, errors, rate limit, no-store
+│   │   ├── modules/         areas, auth, rides, pools, driver, health
+│   │   │   └── <module>/    routes, service, Zod schemas
+│   │   ├── app.ts           Express app assembly
+│   │   └── server.ts        listen + graceful shutdown
 │   ├── tests/
-│   └── Dockerfile
+│   │   ├── unit/            pure logic: fares, money, geo, matching, transitions
+│   │   └── integration/     real MySQL: auth, rides, pooling, races, driver flow
 │   ├── Dockerfile           multi-stage, non-root, health-checked
-│   ├── docker-entrypoint.sh migrate → seed → exec server
-│   └── .dockerignore
+│   └── docker-entrypoint.sh migrate → seed → exec server
 ├── frontend/                Next.js App Router
 │   ├── Dockerfile           standalone output, non-root, health-checked
-│   ├── src/app/api/         runtime proxy to the API (same-origin cookies)
-│   ├── src/middleware.ts    coarse redirects for signed-in/out sections
-│   ├── src/app/             routes
-│   ├── src/components/      ui primitives and the signed-in shell
-│   ├── src/hooks/           session
-│   ├── src/providers/       TanStack Query client
-│   └── src/lib/             api client, wire types, formatters
+│   └── src/
+│       ├── app/             routes: passenger, driver, profile, auth
+│       ├── app/api/         runtime proxy to the API (same-origin cookies)
+│       ├── components/      ui primitives, the signed-in shell, role screens
+│       ├── hooks/           session, rides, driver — TanStack Query
+│       ├── providers/       query client
+│       ├── lib/             api client, wire types, formatters
+│       └── middleware.ts    coarse redirects for signed-in/out sections
 ├── docker/
 │   └── mysql/init/          runs once on first database boot
 ├── docker-compose.yml
+├── render.yaml              Render blueprint for the API
 ├── .env.example
 └── README.md
 ```
 
-Each backend module owns its routes, controller, service and Zod schemas. Shared
-domain logic — fare calculation, haversine and bearing, the state machines, money
-formatting — lives in `lib/` as pure functions, which is what makes them
-straightforward to test without a database.
+Each backend module owns its routes, service and Zod schemas; there is no separate
+controller layer, because each route handler is three lines of parse, call, respond.
+Rules with no I/O — the fare calculation, bearing and haversine, the state machines,
+the matching rule — are pure functions in `domain/` and `lib/`, which is what makes
+them testable without a database.
 
 ## Getting started
 
