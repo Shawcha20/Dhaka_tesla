@@ -10,8 +10,11 @@ discounted fare, without the vehicle ever being overbooked.
 > screenshots, each marked _TODO_ below. The [roadmap](#roadmap) shows
 > exactly where things stand.
 
-**Live app:** <https://dhaka-tesla.vercel.app> · **Live API:**
-<https://dhaka-tesla-pool-api-rzh8.onrender.com/api/v1> ·
+**Live app:** <https://dhaka-tesla.vercel.app> ·
+**Live API:** `https://dhaka-tesla-pool-api-rzh8.onrender.com/api/v1` — try
+[`/ready`](https://dhaka-tesla-pool-api-rzh8.onrender.com/ready) (API and database
+health) or [`/api/v1/areas`](https://dhaka-tesla-pool-api-rzh8.onrender.com/api/v1/areas)
+(the twelve Dhaka areas) ·
 **Demo video:** _TODO_
 
 ### Sign in to try it
