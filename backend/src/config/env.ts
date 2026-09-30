@@ -71,9 +71,11 @@ const EnvSchema = z
      * SameSite=None — which in turn requires Secure. Locally both are localhost,
      * where Lax works and None would be rejected over plain http.
      *
-     * Routing the frontend's /api through a Next.js rewrite would make the pair
-     * same-origin and allow Lax in production too; that is the stronger CSRF
-     * position and is noted in the README as the next improvement.
+     * The deployed frontend avoids that: it proxies /api to this service from its
+     * own server (frontend/src/app/api/[...path]/route.ts), so the browser sees one
+     * origin and production runs with Lax — the stronger CSRF position.
+     * render.yaml sets COOKIE_SAMESITE=lax accordingly. `none` remains available
+     * for a client that calls this API cross-site directly.
      */
     COOKIE_SAMESITE: z.enum(['lax', 'strict', 'none']).optional(),
     COOKIE_DOMAIN: z.string().min(1).optional(),
