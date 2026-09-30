@@ -94,6 +94,18 @@ describe.skipIf(!hasDatabase)('driver cancellations', () => {
       expect(ride.body.data.status).toBe('REQUESTED');
     });
 
+    it('no longer shows the passenger the Tesla that dropped them', async () => {
+      const rideId = await request(nusrat);
+      await acceptThenCancel(jashim, rideId);
+
+      const ride = (await nusrat.agent.get(`/api/v1/rides/${rideId}`)).body.data;
+
+      // Not "Your Tesla — driven by Jashim" with a Call button: he is gone.
+      expect(ride.pool).toBeNull();
+      // And priced as what she now is again — a waiting request, at its quote.
+      expect(ride.currentFarePaisa).toBe(ride.estimatedFarePaisa);
+    });
+
     it('cannot be accepted again by the driver who dropped it', async () => {
       const rideId = await request(nusrat);
       await acceptThenCancel(jashim, rideId);

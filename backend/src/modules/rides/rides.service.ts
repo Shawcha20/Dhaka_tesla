@@ -220,7 +220,18 @@ export async function getRideForPassenger(rideId: bigint, passengerId: bigint) {
           actor: { select: { name: true } },
         },
       },
+      /**
+       * Only a membership that is still current.
+       *
+       * A driver cancelling a trip closes its memberships (left_at is set) and
+       * puts the passenger back in the queue. Taking the latest membership
+       * regardless showed a requeued passenger "Your Tesla — driven by Jashim"
+       * with a Call button, for a driver who had just dropped them, and priced
+       * them from that dead trip. A completed ride keeps its membership open, so
+       * receipts still show the Tesla and companions they rode with.
+       */
       poolMembers: {
+        where: { leftAt: null },
         orderBy: { id: 'desc' },
         take: 1,
         select: {
