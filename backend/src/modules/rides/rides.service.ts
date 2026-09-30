@@ -47,7 +47,29 @@ export interface QuoteResult {
  * if shared" without doing any arithmetic of its own — keeping one implementation
  * of the fare model, on the server.
  */
+/**
+ * Refuses more seats than the largest vehicle in the fleet has.
+ *
+ * The schema allows up to 4 so a bigger vehicle can be added later without a
+ * migration; but with today's three-seat fleet a 4-seat request could never be
+ * accepted, and the passenger would wait forever with nothing telling them why.
+ * Checked against the vehicles actually registered, so adding a larger one lifts
+ * the limit with no code change.
+ */
+async function assertSeatsFitFleet(seats: number): Promise<void> {
+  const { _max } = await prisma.vehicle.aggregate({ _max: { capacity: true } });
+  const largest = _max.capacity;
+  if (largest === null || seats <= largest) return;
+
+  const message = `Our largest Tesla seats ${largest}, so book at most ${largest}.`;
+  throw new AppError('SEATS_EXCEED_FLEET', {
+    message,
+    details: [{ path: 'seats', message }],
+  });
+}
+
 export async function quote(input: QuoteInput): Promise<QuoteResult> {
+  await assertSeatsFitFleet(input.seats);
   const { pickup, dropoff } = await loadRoute(input.pickupAreaId, input.dropoffAreaId);
   const metres = distanceMilliKm(toCoordinates(pickup), toCoordinates(dropoff));
 
@@ -79,6 +101,7 @@ export async function quote(input: QuoteInput): Promise<QuoteResult> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function createRide(passengerId: bigint, input: CreateRideInput) {
+  await assertSeatsFitFleet(input.seats);
   const { pickup, dropoff } = await loadRoute(input.pickupAreaId, input.dropoffAreaId);
   const metres = distanceMilliKm(toCoordinates(pickup), toCoordinates(dropoff));
 

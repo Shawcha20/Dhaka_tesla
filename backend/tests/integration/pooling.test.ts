@@ -123,7 +123,17 @@ describe.skipIf(!hasDatabase)('pooling and capacity', () => {
     });
 
     it('refuses a request needing more seats than the vehicle has', async () => {
-      const rideId = await nusratRequests(4); // Bullet seats 3
+      // A mixed fleet: a four-seat vehicle exists, so a 4-seat request is valid
+      // to make — but Bullet seats 3, and must not take it.
+      const { createDriver } = await import('../helpers/actors.js');
+      await createDriver(app, {
+        name: 'Kamal Hossain',
+        email: 'kamal@dhakatesla.test',
+        vehicleName: 'Toofan',
+        plateNo: 'DHA-TESLA-04',
+        capacity: 4,
+      });
+      const rideId = await nusratRequests(4);
 
       const res = await jashim.agent.post('/api/v1/driver/pools').send({ rideRequestId: rideId });
 
