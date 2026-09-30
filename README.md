@@ -14,9 +14,24 @@ discounted fare, without the vehicle ever being overbooked.
 <https://dhaka-tesla-pool-api-rzh8.onrender.com/api/v1> ·
 **Demo video:** _TODO_
 
-Sign in with any of the [demo accounts](#demo-credentials) — password
-`TeslaPool#2026`. Open **Jashim** in one browser and **Nusrat** in another to watch a
-fare drop the moment the two are pooled.
+### Sign in to try it
+
+Password for every account: **`TeslaPool#2026`**
+
+| Role | Email | |
+| --- | --- | --- |
+| **Driver** | `jashim@dhakatesla.test` | Jashim, drives Bullet (3 seats) |
+| **Driver** | `kamal@dhakatesla.test` | Kamal, drives Toofan (3 seats) |
+| **Driver** | `babul@dhakatesla.test` | Babul, drives Rocket (3 seats) |
+| Passenger | `nusrat@dhakatesla.test` | Nusrat, ৳500 TeslaPay |
+| Passenger | `rafiq@dhakatesla.test` | Rafiq, ৳500 TeslaPay |
+| Passenger | `shirin@dhakatesla.test` | Shirin, ৳45 TeslaPay (deliberately low) |
+
+**The quickest demo:** open **Jashim** in one browser and **Nusrat** in a private
+window. As Nusrat, request **Banani → Mohakhali**; as **Rafiq** (a third window),
+request **Banani → Gulshan 1**. As Jashim, switch online, accept Nusrat, then add
+Rafiq — and watch Nusrat's fare drop from ৳46.99 to ৳41.59 without a refresh.
+More detail under [Demo credentials](#demo-credentials).
 
 > The API runs on Render's free tier, which spins a container down after inactivity, so
 > the first request may take up to a minute. Check it is awake with
@@ -1297,14 +1312,17 @@ Dhaka areas with real coordinates.
 
 Password is the same for every account: **`TeslaPool#2026`**
 
-| Role | Email | Notes |
-| --- | --- | --- |
-| Driver | `jashim@dhakatesla.test` | Owns Bullet — `DHA-TESLA-01`, 3 seats |
-| Passenger | `nusrat@dhakatesla.test` | 500.00 BDT TeslaPay balance |
-| Passenger | `rafiq@dhakatesla.test` | 500.00 BDT — pools with Nusrat from Banani |
-| Passenger | `shirin@dhakatesla.test` | **45.00 BDT only** — enough for a pooled fare but not a solo one, so the `INSUFFICIENT_WALLET_BALANCE` path is demonstrable without editing data |
-| Driver | `kamal@dhakatesla.test` | Owns Toofan — `DHA-TESLA-02`, 3 seats |
-| Driver | `babul@dhakatesla.test` | Owns Rocket — `DHA-TESLA-03`, 3 seats |
+| Role | Name | Email | Notes |
+| --- | --- | --- | --- |
+| Driver | Jashim Uddin | `jashim@dhakatesla.test` | Owns Bullet — `DHA-TESLA-01`, 3 seats |
+| Driver | Kamal Hossain | `kamal@dhakatesla.test` | Owns Toofan — `DHA-TESLA-02`, 3 seats |
+| Driver | Babul Mia | `babul@dhakatesla.test` | Owns Rocket — `DHA-TESLA-03`, 3 seats |
+| Passenger | Nusrat Jahan | `nusrat@dhakatesla.test` | 500.00 BDT TeslaPay balance |
+| Passenger | Rafiq Hasan | `rafiq@dhakatesla.test` | 500.00 BDT — pools with Nusrat from Banani |
+| Passenger | Shirin Akter | `shirin@dhakatesla.test` | **45.00 BDT only** — enough for a pooled fare but not a solo one, so the `INSUFFICIENT_WALLET_BALANCE` path is demonstrable without editing data |
+
+Drivers are created only by the seed, not by signing up; see
+[Known limitations](#known-limitations).
 
 Three drivers so the multi-driver rules are visible: sign in as Jashim and Kamal in
 two browsers, have Jashim accept and then cancel Nusrat's ride, and it vanishes from
@@ -1529,6 +1547,9 @@ is set, so one image runs unchanged locally and on Render.
 - **One active ride per passenger and one active pool per driver.** Simplifies state
   considerably; a real system would relax both.
 - **A user is a passenger or a driver, never both.**
+- **Drivers cannot sign themselves up.** Signing up always creates a passenger;
+  drivers and their vehicles come from the seed. Onboarding a real driver means
+  verifying a licence and a vehicle, which has no honest MVP version.
 - **No mid-trip joins.** Once a pool starts, membership is frozen.
 - **Status updates are polled**, so there is a few seconds of latency.
 - **Free-tier cold starts** on the backend after idle periods.
@@ -1641,16 +1662,34 @@ strand anyone mid-trip.
 
 ## AI usage
 
-**Tools.** Claude Code (Anthropic's Claude, in VS Code) was my main assistant for
-this project: planning the phases, writing and reviewing code, writing tests, the
-Docker and deployment configuration, and drafting this README. Vercel's and Render's
-own documentation for the deployment details.
+**Tools.** Claude Code (Anthropic's Claude, in VS Code) was my main tool. It wrote
+most of the code, the tests, the Docker and deployment configuration, and drafts of
+this README. I used Vercel's, Render's and Aiven's own documentation and dashboards
+for the deployment.
 
-**How I used it.** I set the constraints first — MySQL, Express, Next.js, integer
-paisa, the story cast, no Redis or queues — and worked phase by phase: backend
-before frontend, one feature branch per feature, every commit mine to review before
-it landed. I treated its output as a proposal. Anything touching money, seat
-capacity or auth, I read line by line and asked it to prove with a test.
+**How the work was split.** I directed; the AI implemented. My part:
+
+- **The constraints and decisions.** I chose the stack (MySQL, Node.js, Next.js,
+  Docker, free-tier hosting only), set the order (backend fully before frontend),
+  the repository shape (`frontend/`, `backend/` and this README), and the git
+  workflow — feature branches, reviewed merges, my name on every commit.
+- **The deployment.** I set up and configured Vercel, Render and the Aiven MySQL
+  database myself, supplied the environment settings, and debugged the failed
+  deploys from their logs, including the day Aiven powered the database off.
+- **Testing it as a user, and finding what the tests missed.** I ran the app with a
+  driver and passengers in separate browsers and reported what was wrong. Those
+  reports became fixes: the driver board showing nobody while passengers waited;
+  a cancelled ride reappearing for the driver who cancelled it; a requeued
+  passenger still shown the driver who had dropped them; four seats bookable in a
+  three-seat Tesla.
+- **Product requirements the brief did not state.** I asked for account settings
+  for both roles, for demo credentials to come out of the shipped UI, for more than
+  one demo driver, for a ride one driver cancels to stay open to the others, and
+  for a limit on how often a driver may cancel.
+
+I treated the AI's output as a proposal, and the parts that decide correctness —
+money, seat capacity, the state machines, auth — are the ones I made it prove with
+tests and that I can explain line by line.
 
 **A suggestion I accepted: claiming seats with one conditional `UPDATE`.**
 For the Nusrat-and-Shirin race, the suggestion was not "read the free seats, then
@@ -1669,10 +1708,10 @@ a second line of defence, and a test fires five simultaneous claims at one seat 
 prove exactly one wins.
 
 **A suggestion I rejected: demo credentials on the sign-in page.** The first
-version of the login screen listed the four demo accounts as clickable chips, and
-the landing page printed the shared password. Convenient for a reviewer, but I
-asked for it to be removed: a production sign-in form that lists working accounts
-has stopped being a sign-in form. The credentials live in this README instead.
+version of the login screen listed the demo accounts as clickable chips, and the
+landing page printed the shared password. Convenient for a reviewer, but I had it
+removed: a production sign-in form that lists working accounts has stopped being a
+sign-in form. The credentials live in this README instead, at the top.
 
 **Where it was wrong, and what I changed.** When the driver's board showed
 "Nobody waiting" while passengers were queued, the first diagnosis was browser
