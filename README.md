@@ -581,7 +581,7 @@ erDiagram
     vehicles ||--o{ pools : "is used for"
 
     pools ||--|{ pool_members : "contains"
-    ride_requests ||--o| pool_members : "is seated by"
+    ride_requests ||--o{ pool_members : "is seated by, once per pool"
 
     ride_requests ||--o{ ride_status_history : "logs"
     pools ||--o{ ride_status_history : "logs"
