@@ -70,6 +70,10 @@ export const ERROR_CATALOG = {
     status: 422,
     message: 'Pickup and destination must be different areas.',
   },
+  SEATS_EXCEED_FLEET: {
+    status: 422,
+    message: 'No Tesla has that many seats.',
+  },
   ROUTE_NOT_COMPATIBLE: {
     status: 422,
     message: 'These routes are not heading the same way.',

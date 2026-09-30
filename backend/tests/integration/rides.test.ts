@@ -106,6 +106,39 @@ describe.skipIf(!hasDatabase)('ride lifecycle', () => {
     });
   });
 
+  describe('seats against the fleet', () => {
+    const route = () => ({ pickupAreaId: areas.banani, dropoffAreaId: areas.mohakhali });
+
+    it('refuses more seats than the largest Tesla has', async () => {
+      await createJashim(app); // Bullet: 3 seats, the whole fleet
+
+      // 4 passes the schema (a bigger vehicle may join later) but no Tesla today
+      // could ever accept it, so the passenger must hear that now, not wait forever.
+      const res = await nusrat.agent.post('/api/v1/rides').send({ ...route(), seats: 4 });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe('SEATS_EXCEED_FLEET');
+      expect(res.body.error.details).toEqual([expect.objectContaining({ path: 'seats' })]);
+      expect(await prisma.rideRequest.count()).toBe(0);
+    });
+
+    it('refuses to quote them either', async () => {
+      await createJashim(app);
+
+      const res = await nusrat.agent.post('/api/v1/rides/quote').send({ ...route(), seats: 4 });
+
+      expect(res.status).toBe(422);
+    });
+
+    it('accepts a request that fills the largest Tesla exactly', async () => {
+      await createJashim(app);
+
+      const res = await nusrat.agent.post('/api/v1/rides').send({ ...route(), seats: 3 });
+
+      expect(res.status).toBe(201);
+    });
+  });
+
   describe('POST /rides', () => {
     it('creates a REQUESTED ride with the solo fare', async () => {
       const res = await nusrat.agent

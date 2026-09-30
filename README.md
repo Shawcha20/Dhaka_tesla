@@ -1422,6 +1422,7 @@ so the API does not confirm that someone else's ride id exists.
 | `RIDE_ALREADY_MATCHED` | 409 | Another driver accepted it first |
 | `RIDE_PREVIOUSLY_CANCELLED_BY_YOU` | 409 | This driver cancelled a trip carrying that passenger; it stays open to others |
 | `DRIVER_CANCEL_LIMIT_REACHED` | 409 | Too many cancellations in the window; the message says when accepting resumes |
+| `SEATS_EXCEED_FLEET` | 422 | More seats than the largest registered vehicle has; checked against the fleet, so a bigger vehicle lifts it |
 | `POOL_CAPACITY_EXCEEDED` | 409 | No seats left — the race loser |
 | `POOL_NOT_FORMING` | 409 | Pool no longer accepts members |
 | `POOL_EMPTY` | 409 | Cannot start a trip with no passengers |
@@ -1558,10 +1559,6 @@ why they are listed rather than silently guessed at.
 - **A failed payment is never closed.** When a wallet is short the driver is told to
   collect cash, but there is no way to record that they did, so the payment stays
   `FAILED` and the driver's earnings under-count it.
-- **Four seats can be requested, but every vehicle has three.** The schema allows up to
-  4 so a larger vehicle could be added later; with today's fleet a 4-seat request
-  can never be accepted. It should be validated against the largest vehicle actually
-  registered.
 - **Passengers have no cancellation limit.** Drivers do; see
   [When a driver cancels](#when-a-driver-cancels).
 - **Changing a password signs out other devices within 15 minutes, not instantly.**

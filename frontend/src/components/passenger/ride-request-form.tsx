@@ -128,9 +128,17 @@ export function RideRequestForm({
             </Select>
           </Field>
 
-          <Field label="Seats" htmlFor="seats">
+          <Field
+            label="Seats"
+            htmlFor="seats"
+            error={error?.fieldErrors['seats']}
+            hint="Every Tesla seats three."
+          >
+            {/* Three because every vehicle in the fleet seats three. The server
+                checks against the vehicles actually registered, so this list is a
+                convenience, not the rule. */}
             <Select id="seats" value={seats} onChange={(e) => setSeats(Number(e.target.value))}>
-              {[1, 2, 3, 4].map((n) => (
+              {[1, 2, 3].map((n) => (
                 <option key={n} value={n}>
                   {n} {n === 1 ? 'seat' : 'seats'}
                 </option>
